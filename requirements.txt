@@ -1,0 +1,16 @@
+# 运行依赖
+
+只使用 **Python 3.9+ 标准库**（`sqlite3`、`http.server`、`hashlib`、`gzip` 等），
+没有第三方包，所以这个文件是空的。
+
+需要的能力：
+
+| 能力 | 依赖 | 缺失时 |
+|---|---|---|
+| 页面与接口 | Python 3.9+ | 起不来，`tools/check_repo.py` 会直接报错 |
+| 语义边（摘要/记忆相似度） | 可选：向量后端（原项目里的 `companion_brain`） | 自动跳过，只画结构边，不影响出图 |
+| 只读/账号/管理 | 无 | — |
+
+```bash
+python -m pip install -r requirements.txt   # 实际上什么都不装
+```

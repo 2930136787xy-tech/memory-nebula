@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>记忆星云 · 登录</title>
+<style>
+  :root{--text:#e8eefc;--dim:#8b9ab5;--line:rgba(120,160,255,.22)}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:#0b1020;color:var(--text);font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif;
+    display:flex;align-items:center;justify-content:center;overflow:hidden}
+  body::before{content:"";position:fixed;inset:0;
+    background:radial-gradient(40% 34% at 30% 28%,rgba(120,90,255,.18),transparent 70%),
+      radial-gradient(36% 30% at 76% 70%,rgba(30,190,210,.13),transparent 72%),
+      radial-gradient(30% 26% at 70% 20%,rgba(255,120,180,.08),transparent 70%);
+    pointer-events:none}
+  .card{position:relative;width:min(380px,92vw);padding:28px 26px 22px;border-radius:16px;
+    background:rgba(14,20,38,.92);border:1px solid var(--line);
+    box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04)}
+  h1{font-size:17px;margin:0 0 4px;font-weight:600;letter-spacing:.4px}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:20px}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:14px 0 6px}
+  input{width:100%;padding:10px 12px;border-radius:9px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--text);font-size:14px;outline:none}
+  input:focus{border-color:rgba(77,163,255,.6);background:rgba(77,163,255,.08)}
+  button{width:100%;margin-top:20px;padding:11px;border-radius:9px;border:1px solid rgba(77,163,255,.5);
+    background:rgba(77,163,255,.22);color:#dbeaff;font-size:14px;cursor:pointer}
+  button:hover{background:rgba(77,163,255,.32)}
+  button:disabled{opacity:.6;cursor:default}
+  .switch{display:flex;align-items:center;gap:9px;margin-top:16px;
+    color:var(--dim);font-size:12.5px;cursor:pointer;user-select:none}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .track{position:relative;flex:none;width:36px;height:21px;border-radius:11px;
+    border:1px solid var(--line);background:rgba(255,255,255,.12);transition:.18s}
+  .switch .track::after{content:"";position:absolute;left:2px;top:2px;width:15px;height:15px;
+    border-radius:50%;background:#8b9ab5;transition:.18s}
+  .switch input:checked + .track{background:rgba(77,163,255,.35);
+    border-color:rgba(77,163,255,.55)}
+  .switch input:checked + .track::after{left:17px;background:#dbeaff}
+  .switch input:focus-visible + .track{outline:2px solid rgba(77,163,255,.6);outline-offset:2px}
+  .err{min-height:20px;margin-top:12px;font-size:12.5px;color:#ff9aa6}
+  .note{margin-top:16px;padding-top:14px;border-top:1px solid rgba(120,160,255,.1);
+    color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+  <div class="card" id="form" autocomplete="off">
+    <h1>记忆星云 · Memory Nebula</h1>
+    <div class="sub">用发给你的 QQ 号和密码登录。整张星云都能看；别人的记忆只显示概况，具体内容和修改只限自己的数据。</div>
+    <label for="qq">QQ 号</label>
+    <input id="qq" name="account" inputmode="numeric" pattern="[0-9]*" placeholder="例如 123456789"
+           autocomplete="off" autocapitalize="off" spellcheck="false"
+           data-lpignore="true" data-1p-ignore="true" data-bwignore="true" required>
+    <label for="pw">密码</label>
+    <input id="pw" name="passcode" type="password" placeholder="主人发给你的密码"
+           autocomplete="off" autocapitalize="off" spellcheck="false"
+           data-lpignore="true" data-1p-ignore="true" data-bwignore="true" required>
+    <label class="switch">
+      <input type="checkbox" id="remember" checked>
+      <span class="track"></span>
+      <span>7 天免登录</span>
+    </label>
+    <button id="go" type="button">登录</button>
+    <div class="err" id="err"></div>
+    <div class="note">没有账号或忘了密码，找管理员重新发一个。</div>
+  </div>
+<script>
+const err = document.getElementById('err');
+const go = document.getElementById('go');
+const remember = document.getElementById('remember');
+const LOCAL_FILE = location.protocol === 'file:';
+if (LOCAL_FILE){
+  err.textContent = '你现在是直接双击打开的网页文件，登录请求发不出去。请先运行 start-viewer-accounts.bat，再访问 http://127.0.0.1:8767/';
+  go.disabled = true;
+}
+async function doLogin(){
+  if (go.disabled) return;
+  err.textContent = '';
+  if (LOCAL_FILE){
+    err.textContent = '请先运行 start-viewer-accounts.bat，再访问 http://127.0.0.1:8767/';
+    return;
+  }
+  const qqEl = document.getElementById('qq');
+  const pwEl = document.getElementById('pw');
+  const qq = qqEl.value.trim();
+  const password = pwEl.value;
+  if (!/^\d+$/.test(qq)){ err.textContent = 'QQ 号只能是数字'; return; }
+  go.disabled = true; go.textContent = '登录中…';
+  try {
+    const res = await fetch('api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({qq, password, remember: remember.checked})
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) throw new Error(j.error || '登录失败');
+    pwEl.value = '';
+    location.replace(j.admin ? '/life' : '/');
+  } catch (e) {
+    const msg = String((e && e.message) || '登录失败');
+    err.textContent = /Failed to fetch|NetworkError|load failed/i.test(msg)
+      ? '连不上账号服务：确认 start-viewer-accounts.bat 的窗口还开着，再刷新本页；不要直接双击 web/login.html。'
+      : msg;
+    go.disabled = false; go.textContent = '登录';
+  }
+}
+go.addEventListener('click', doLogin);
+for (const el of [document.getElementById('qq'), document.getElementById('pw')]){
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter'){ e.preventDefault(); doLogin(); }
+  });
+}
+document.getElementById('qq').focus();
+</script>
+</body>
+</html>

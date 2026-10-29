@@ -1,0 +1,27 @@
+# 运行期数据：绝不要提交（里面是真实聊天、记忆和密码材料）
+data/
+personas/
+bridge.db
+brain.db
+*.db
+*.db-wal
+*.db-shm
+accounts.json
+accounts.key
+config.json
+settings.json
+web/graph.json
+runtime/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

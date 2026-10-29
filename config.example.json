@@ -1,0 +1,7 @@
+{
+  "admins": ["10001"],
+  "backend": "local",
+  "known_users": ["10002"],
+  "stranger_users": ["10004"],
+  "note": "copy this file to config.json and edit. admins/known_users/stranger_users are QQ numbers."
+}

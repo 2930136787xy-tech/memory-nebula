@@ -1,0 +1,2682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" href="data:,">
+<link rel="preload" as="script" href="vendor/3d-force-graph.min.js?v=2">
+<title>记忆星云 · Memory Nebula</title>
+<style>
+  :root{--bg:#0b1020;--panel:rgba(12,16,28,.86);--line:rgba(120,160,255,.16);
+    --text:#e8edf7;--dim:#8a96ad;--accent:#4da3ff}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:14px/1.6 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;overflow:hidden;
+    overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+  #scene{position:fixed;inset:0;z-index:2;user-select:none;-webkit-user-select:none}
+  #pulse{position:fixed;inset:0;z-index:4;width:100%;height:100%;display:block;pointer-events:none;opacity:0;transition:opacity .25s}
+  body.galaxy #pulse{opacity:var(--pulse-op,1)}
+  #scene canvas{touch-action:none}
+  /* 星云层：叠在画布之上，screen 混合只加光不挡球 */
+  #nebula{position:fixed;inset:0;z-index:3;pointer-events:none;
+    mix-blend-mode:screen;opacity:.42;
+    background:
+      radial-gradient(38% 32% at 20% 26%,rgba(74,118,255,.20),transparent 70%),
+      radial-gradient(32% 26% at 78% 60%,rgba(168,86,255,.15),transparent 72%),
+      radial-gradient(48% 40% at 54% 90%,rgba(30,190,210,.10),transparent 74%),
+      radial-gradient(26% 22% at 88% 18%,rgba(255,120,180,.07),transparent 70%),
+      radial-gradient(1.3px 1.3px at 12% 22%,rgba(255,255,255,.75),transparent 60%),
+      radial-gradient(1.1px 1.1px at 37% 68%,rgba(200,225,255,.6),transparent 60%),
+      radial-gradient(1.5px 1.5px at 62% 14%,rgba(255,255,255,.6),transparent 60%),
+      radial-gradient(1.1px 1.1px at 81% 52%,rgba(200,225,255,.65),transparent 60%),
+      radial-gradient(1.3px 1.3px at 26% 84%,rgba(255,255,255,.5),transparent 60%),
+      radial-gradient(1.1px 1.1px at 72% 88%,rgba(210,200,255,.6),transparent 60%),
+      radial-gradient(1.7px 1.7px at 90% 30%,rgba(255,255,255,.45),transparent 60%),
+      radial-gradient(1px 1px at 48% 46%,rgba(255,255,255,.35),transparent 60%);
+    background-size:100% 100%,100% 100%,100% 100%,100% 100%,
+      520px 520px,640px 640px,760px 760px,700px 700px,580px 580px,820px 820px,900px 900px,680px 680px;
+    animation:nebulaDrift 140s linear infinite}
+  @keyframes nebulaDrift{
+    from{transform:translate3d(0,0,0) scale(1.02)}
+    to{transform:translate3d(-2.5%,-1.8%,0) scale(1.02)}}
+  header{position:fixed;top:0;left:0;right:0;padding:12px 16px;display:flex;
+    align-items:center;gap:12px;z-index:10;flex-wrap:wrap;
+    background:linear-gradient(180deg,rgba(6,9,18,.94),rgba(6,9,18,.5) 70%,transparent);
+    backdrop-filter:blur(6px);border-bottom:1px solid rgba(120,160,255,.08)}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.5px;white-space:nowrap}
+  .stats{color:var(--dim);font-size:12.5px;white-space:nowrap}
+  .stats b{color:var(--text);font-weight:600}
+  .spacer{flex:1}
+  input[type=search]{background:rgba(255,255,255,.05);border:1px solid var(--line);
+    color:var(--text);border-radius:7px;padding:5px 10px;font-size:12.5px;width:190px;outline:none}
+  input[type=search]:focus{border-color:rgba(77,163,255,.55);background:rgba(77,163,255,.08)}
+  select#person{background:rgba(255,255,255,.05);border:1px solid var(--line);
+    color:var(--text);border-radius:7px;padding:5px 8px;font-size:12.5px;max-width:170px;outline:none}
+  select#person:focus{border-color:rgba(77,163,255,.55)}
+  .ro-badge{padding:3px 9px;border-radius:999px;font-size:12px;color:#ffd166;
+    border:1px solid rgba(255,209,102,.45);background:rgba(255,209,102,.1)}
+  .acct{padding:3px 10px;border-radius:999px;font-size:12px;color:#bcd8ff;
+    border:1px solid rgba(120,160,255,.35);background:rgba(77,163,255,.1)}
+  .acct a{color:#8fc6ff;text-decoration:none;margin-left:4px}
+  .acct a:hover{text-decoration:underline}
+  .accounts.admin .acct{color:#ffd166;border-color:rgba(255,209,102,.45);background:rgba(255,209,102,.1)}
+  .accounts.admin .acct a{color:#ffd166}
+  #acctmodal{position:fixed;inset:0;z-index:60;background:rgba(4,8,16,.74);
+    display:flex;align-items:center;justify-content:center}
+  #acctmodal[hidden]{display:none}
+  #acctmodal .sheet{width:min(760px,94vw);max-height:84vh;overflow:auto;background:#0f1726;
+    border:1px solid #26344d;border-radius:14px;padding:16px 18px;box-shadow:0 20px 60px #0008}
+  #coremodal{position:fixed;inset:0;z-index:60;background:rgba(4,8,16,.74);
+    display:flex;align-items:center;justify-content:center}
+  #coremodal[hidden]{display:none}
+  #coremodal .sheet{width:min(720px,94vw);max-height:84vh;overflow:auto;background:#0f1726;
+    border:1px solid #26344d;border-radius:14px;padding:16px 18px;box-shadow:0 20px 60px #0008}
+  .coreitem{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid #1c2940}
+  .coreitem .coretxt{flex:1;min-width:0;color:#dbe9ff;font-size:13px;line-height:1.55;word-break:break-word}
+  .coreitem .coremeta{color:#7e93b0;font-size:11.5px;margin-top:4px}
+  .coreitem .coreops{display:flex;gap:6px;flex-shrink:0}
+  .mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .mhead b{font-size:15px}
+  .addrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .addrow input{background:#0a1220;border:1px solid #2a3a55;border-radius:8px;color:#dbe9ff;
+    padding:7px 10px;font-size:13px;width:150px}
+  .addrow label.chk{display:flex;align-items:center;gap:5px;color:#9db2cf;font-size:12px}
+  .acctrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 0;
+    border-top:1px solid #1c2940}
+  .acctrow .who{display:flex;gap:8px;align-items:baseline;min-width:210px}
+  .acctrow .who span{color:#9db2cf;font-size:12px}
+  .acctrow em{font-style:normal;font-size:11px;padding:1px 7px;border-radius:999px;
+    border:1px solid #2a3a55;color:#9db2cf}
+  .acctrow em.adm{color:#ffd166;border-color:rgba(255,209,102,.5);background:rgba(255,209,102,.1)}
+  .acctrow .pw{flex:1;min-width:130px}
+  .acctrow .pw code{color:#8fe3c0;font-size:12px;word-break:break-all}
+  .acctrow .ops{display:flex;gap:6px}
+  .mnote{color:#7e93b0;font-size:12px;margin-top:12px;line-height:1.6}
+  .ro .ro-badge{display:inline-block!important}
+  .ro #batchbtn,.ro #syncbtn,.ro #corebtn,.ro #bar,.ro #detail .acts{display:none!important}
+  body.accounts:not(.admin) #syncbtn{display:none!important}
+  .ro #detail textarea{opacity:.85}
+  body.galaxy #timebox,body.galaxy #legend,body.galaxy #legendbtn,
+  body.galaxy #detail,body.galaxy #bar,body.galaxy #hint,body.galaxy #mzoom,
+  body.galaxy .drawerhint{display:none!important}
+  body.galaxy{background:radial-gradient(ellipse at 50% 42%,hsl(var(--mood-hue,258) 65% var(--mood-light,5%)) 0%,#000 62%);transition:background 1.2s}
+  body.galaxy #nebula{display:none!important}
+  body.galaxy #scene{background:transparent;filter:brightness(1.08)}
+  body.galaxy #stats{opacity:.78}
+  body.flat #nebula{display:none!important}
+  body.flat #galaxyhud{display:none!important}
+  body.flat #pulse{opacity:0!important}
+  #galaxyhud{position:fixed;left:16px;top:calc(var(--hdr-h,64px) + 12px);z-index:9;
+    display:none;pointer-events:none;max-width:min(420px,calc(100vw - 32px));
+    padding:10px 13px;border-radius:12px;border:1px solid rgba(120,160,255,.22);
+    background:rgba(8,12,24,.72);backdrop-filter:blur(10px);box-shadow:0 10px 30px #0005;
+    color:#cfe0ff;font-size:12px;line-height:1.75}
+  body.galaxy #galaxyhud{display:block}
+  #galaxyhud b{color:#fff;font-weight:600}
+  #galaxyhud .k{color:#8fb6e6}
+  #galaxyhud .tier{color:#ffd166}
+  #galaxyhud .muted{color:#7e93b0;font-size:11px}
+  #modeinfo{pointer-events:none!important;position:fixed;left:16px;top:calc(var(--hdr-h,64px) + 12px);z-index:9;
+    display:none;pointer-events:none;max-width:min(430px,calc(100vw - 32px));
+    padding:10px 13px;border-radius:12px;border:1px solid rgba(120,160,255,.22);
+    background:rgba(8,12,24,.76);backdrop-filter:blur(10px);box-shadow:0 10px 30px #0005;
+    color:#cfe0ff;font-size:12px;line-height:1.7}
+  body.galaxy #modeinfo,body.flat #modeinfo{display:block}
+  #modeinfo[hidden]{display:none!important}
+  #modeinfo *{pointer-events:none!important}
+  body.galaxy #galaxyhud{display:none!important}
+  #modeinfo .mi-top{display:flex;align-items:baseline;gap:9px;margin-bottom:3px}
+  #modeinfo .mi-mode{color:#fff;font-weight:600;font-size:13px}
+  #modeinfo .mi-count{color:#8fb6e6;font-size:11.5px}
+  #modeinfo .mi-row{color:#a9bfd9}
+  #modeinfo .mi-tip{color:#7e93b0;font-size:11px;margin-top:3px}
+  #modeinfo .mi-tier{color:#ffd166;font-size:11.5px}
+  .btn{background:rgba(77,163,255,.12);border:1px solid rgba(77,163,255,.35);
+    color:#bcd8ff;border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:rgba(77,163,255,.22)}
+  .btn.on{background:rgba(77,163,255,.3);border-color:rgba(77,163,255,.7);color:#fff}
+  .btn.warn{background:rgba(255,90,110,.12);border-color:rgba(255,90,110,.4);color:#ffb3bd}
+  #legend{position:fixed;left:16px;bottom:14px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:11px 13px;z-index:10;
+    backdrop-filter:blur(10px);min-width:158px;
+    box-shadow:0 8px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.04)}
+  #legend .row{display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;
+    cursor:pointer;user-select:none;color:var(--dim);border-radius:6px;transition:background .15s}
+  #legend .row:hover{background:rgba(120,160,255,.08)}
+  #legend .row.on{color:var(--text)}
+  #legend .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;
+    box-shadow:0 0 9px currentColor,0 0 3px currentColor}
+  #legend .row:not(.on) .dot{opacity:.28;box-shadow:none}
+  #legend .n{margin-left:auto;font-size:11px;color:#5d6b82}
+  #legend .sep{margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}
+  #legend .hintline{font-size:11.5px;color:#5d6b82;line-height:1.5}
+  #legend .grad{height:7px;border-radius:4px;margin:7px 0 3px;
+    background:linear-gradient(90deg,#3f4a63,#7f93b8,#39c5a0)}
+  #legend .gradlab{display:flex;justify-content:space-between;font-size:10.5px;color:#5d6b82}
+  #detail{position:fixed;right:14px;top:60px;width:330px;max-height:calc(100% - 92px);
+    overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:13px 14px;z-index:10;backdrop-filter:blur(10px);display:none}
+  #detail.show{display:block}
+  #detail h2{margin:0 0 3px;font-size:15px;word-break:break-all}
+  .dhead{display:flex;align-items:flex-start;gap:10px}
+  .dhead h2{flex:1;margin:0}
+  #detail .sub{margin-top:3px}
+  #detail .sub{color:var(--dim);font-size:12px;margin-bottom:9px}
+  #detail .kv{display:flex;gap:10px;padding:4px 0;border-top:1px solid rgba(255,255,255,.05);font-size:12.5px}
+  #detail .kv span:first-child{color:var(--dim);flex:0 0 64px}
+  #detail .kv span:last-child{word-break:break-all}
+  #detail .body{margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07);
+    white-space:pre-wrap;word-break:break-word;font-size:13px;color:#cfd8e8}
+  #detail textarea{width:100%;min-height:96px;margin-top:9px;background:rgba(255,255,255,.04);
+    border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px;font:inherit;
+    font-size:12.5px;resize:vertical;outline:none}
+  #detail textarea:focus{border-color:rgba(77,163,255,.55)}
+  /* 说明面板 */
+  #help{position:fixed;inset:60px 0 0 0;display:none;z-index:12;overflow:auto;
+    background:rgba(6,10,20,.82);backdrop-filter:blur(8px);padding:18px 20px 40px}
+  #help.show{display:block}
+  #help .box{max-width:860px;margin:0 auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:18px 22px}
+  #help h1{margin:0 0 4px;font-size:18px}
+  #help .lead{color:var(--dim);font-size:12.5px;margin-bottom:14px}
+  #help h3{margin:18px 0 8px;font-size:13.5px;color:#bcd8ff;
+    border-left:3px solid rgba(77,163,255,.5);padding-left:8px}
+  #help ul{margin:0;padding-left:18px}
+  #help li{margin:7px 0;font-size:13px;line-height:1.65;color:#cfd8e8}
+  #help b{color:#fff;font-weight:600}
+  #help code{background:rgba(255,255,255,.07);border-radius:4px;padding:1px 5px;font-size:12px}
+  #help .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;
+    vertical-align:1px}
+  #help .bar{display:inline-block;width:64px;height:7px;border-radius:4px;vertical-align:0;
+    background:linear-gradient(90deg,#3f4a63,#7f93b8,#39c5a0);margin:0 6px}
+  #help .close{position:absolute;right:26px;top:16px}
+  #help table{border-collapse:collapse;margin-top:6px;font-size:12.5px}
+  #help td,#help th{border:1px solid rgba(255,255,255,.08);padding:5px 9px;text-align:left}
+  #help th{color:var(--dim);font-weight:500}
+  #detail .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  #detail .act{flex:1 1 auto;background:rgba(77,163,255,.1);border:1px solid rgba(77,163,255,.3);
+    color:#bcd8ff;border-radius:6px;padding:5px 8px;font-size:12px;cursor:pointer}
+  #detail .act:hover{background:rgba(77,163,255,.2)}
+  #detail .act:disabled{opacity:.45;cursor:default}
+  #detail .act.danger{background:rgba(255,90,110,.1);border-color:rgba(255,90,110,.35);color:#ffb3bd}
+  #detail .act.on{background:rgba(255,209,102,.18);border-color:rgba(255,209,102,.65);color:#ffe2a3}
+  #detail .relhint{font-size:11.5px;color:var(--dim);margin-top:7px;line-height:1.5}
+  #detail .msg{margin-top:9px;font-size:12px;min-height:17px}
+  #bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:11;display:none;
+    gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:9px 12px;backdrop-filter:blur(10px);font-size:12.5px}
+  #bar.show{display:flex}
+  #hint{position:fixed;right:16px;bottom:14px;color:#5d6b82;font-size:12px;z-index:10;text-align:right}
+  #timebox{position:fixed;left:16px;top:60px;z-index:10;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:9px 12px;backdrop-filter:blur(10px);
+    display:none;font-size:12px;color:var(--dim);width:210px}
+  #timebox.show{display:block}
+  #timebox input[type=range]{width:100%;accent-color:#4da3ff}
+  #timebox .val{color:var(--text);font-size:12px}
+  #toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:20;
+    background:rgba(12,16,28,.94);border:1px solid rgba(77,163,255,.4);border-radius:9px;
+    color:#cfe3ff;padding:7px 14px;font-size:12.5px;pointer-events:none;
+    opacity:0;transition:opacity .18s;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+  #toast.show{opacity:1}
+  #touchhint{display:none}
+  #touchhint[hidden]{display:none!important}
+  @media (max-width:760px){
+    #touchhint{display:flex;position:fixed;left:10px;right:10px;
+      bottom:calc(12px + env(safe-area-inset-bottom));z-index:8;
+      align-items:center;gap:10px;padding:9px 12px;border-radius:11px;
+      background:rgba(8,13,26,.90);border:1px solid rgba(120,160,255,.28);
+      color:#bcd8ff;font-size:12px;line-height:1.45;
+      box-shadow:0 8px 24px rgba(0,0,0,.35);backdrop-filter:blur(8px);
+      touch-action:manipulation}
+    #touchhint span{flex:1}
+    #touchhint button{flex:0 0 auto;min-width:30px;min-height:30px;padding:0;
+      border-radius:8px;border:1px solid rgba(120,160,255,.3);
+      background:rgba(120,160,255,.10);color:#cfe3ff;font-size:16px;line-height:1}
+  }
+  .menu-btn{display:none}
+  #legendbtn{display:none}
+  #mzoom{display:none}
+  .drawerhint{display:none}
+  .dclose{display:none}
+  #tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:1;justify-content:flex-end}
+  @media (max-width:760px){
+    html,body{height:100dvh}
+    header{padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top));
+      gap:6px 8px;flex-wrap:wrap;align-items:center}
+    h1{font-size:14px;order:1;flex:0 0 auto}
+    #menubtn{order:2;display:inline-block;margin-left:auto;min-width:42px;min-height:40px;
+      font-size:17px;line-height:1;padding:6px 10px}
+    .stats{order:3;flex:1 1 100%;font-size:11px;line-height:1.4;color:#8a96ad;
+      white-space:normal;overflow:visible;text-overflow:clip;max-width:none;margin:0 0 2px}
+    #tools{display:none;position:absolute;left:8px;right:8px;
+      top:calc(100% + 6px);z-index:30;
+      background:rgba(9,13,24,.98);border:1px solid var(--line);border-radius:14px;
+      padding:10px;gap:8px;flex-wrap:wrap;justify-content:flex-start;
+      max-height:70vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.65)}
+    body.menu #tools{display:flex}
+    #tools input[type=search]{flex:1 1 100%;height:40px;font-size:16px}
+    #tools select{flex:1 1 100%;height:40px;font-size:16px}
+    #tools .btn{min-height:40px;padding:8px 12px;font-size:13.5px}
+    #tools .acct{flex:1 1 100%;white-space:normal;font-size:12px}
+    .drawerhint{display:block;flex:1 1 100%;color:#7e8ba3;font-size:11.5px;
+      line-height:1.5;border-top:1px dashed rgba(120,160,255,.15);padding-top:8px;margin-top:2px}
+    #legend{display:none}
+    #legendbtn{display:block;position:fixed;left:8px;
+      bottom:calc(14px + env(safe-area-inset-bottom));z-index:24;
+      min-height:42px;padding:8px 14px;font-size:13.5px;
+      background:rgba(12,16,28,.94);backdrop-filter:none;
+      box-shadow:0 8px 24px rgba(0,0,0,.45)}
+    body.filters #legendbtn{background:rgba(77,163,255,.3);border-color:rgba(77,163,255,.7);color:#fff}
+    body.batch #legendbtn{bottom:calc(88px + env(safe-area-inset-bottom))}
+    #mzoom{display:flex;position:fixed;right:8px;
+      bottom:calc(14px + env(safe-area-inset-bottom));z-index:24;
+      flex-direction:column;gap:8px;backdrop-filter:none}
+    #mzoom .btn{width:48px;height:48px;min-height:48px;padding:0;font-size:22px;
+      line-height:1;border-radius:12px;background:rgba(12,16,28,.94);
+      border-color:rgba(120,160,255,.35);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+    body.batch #mzoom{bottom:calc(88px + env(safe-area-inset-bottom))}
+    body.filters #legend{display:block;position:fixed;left:8px;right:8px;
+      bottom:calc(66px + env(safe-area-inset-bottom));z-index:26;
+      max-height:52vh;overflow:auto;min-width:0;padding:10px 12px;border-radius:12px;
+      backdrop-filter:none}
+    body.batch.filters #legend{bottom:calc(140px + env(safe-area-inset-bottom))}
+    #hint{display:none}
+    #detail{right:0;left:0;top:0;bottom:0;width:auto;max-height:none;height:100dvh;
+      border-radius:0;border:0;z-index:45;
+      padding:calc(10px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom))}
+    #detail .dhead{position:sticky;top:calc(-2px);z-index:2;background:rgba(12,16,28,.97);
+      padding:4px 0 8px;margin:-4px 0 2px}
+    .dclose{display:block;min-height:38px;padding:6px 12px;font-size:13px;flex:0 0 auto}
+    #detail textarea{min-height:110px;font-size:16px}
+    #bar{left:8px;right:8px;bottom:8px;transform:none;flex-wrap:nowrap;overflow-x:auto;
+      padding:8px calc(8px + env(safe-area-inset-right));border-radius:12px}
+    #bar .btn{min-height:38px;flex:0 0 auto}
+    #toast{bottom:96px;max-width:90vw;text-align:center}
+    #timebox{left:8px;right:8px;top:calc(var(--hdr-h, 72px) + 8px);width:auto}
+    #help{inset:0;padding:0;backdrop-filter:none}
+    #help .box{max-width:none;min-height:100%;border-radius:0;border:0;
+      padding:18px 14px calc(30px + env(safe-area-inset-bottom))}
+    #help .close{position:fixed;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:2}
+    #acctmodal .sheet{width:100%;max-width:100%;border-radius:16px 16px 0 0;max-height:90vh}
+    #nebula{animation:none}
+    header{backdrop-filter:none}
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<canvas id="pulse" aria-hidden="true"></canvas>
+<div id="nebula"></div>
+<div id="touchhint" hidden>
+  <span>单指旋转 · 双指缩放/平移 · 点球看详情</span>
+  <button id="touchhintx" type="button" aria-label="关闭触控提示">×</button>
+</div>
+
+<header>
+  <h1>记忆星云</h1>
+  <div class="stats" id="stats">读取中…</div>
+  <button class="btn menu-btn" id="menubtn" title="菜单" aria-label="菜单">☰</button>
+  <div id="tools">
+  <input type="search" id="q" placeholder="搜索记忆内容…">
+  <select id="person" title="只看某个人：他的会话、消息、记忆、摘要"><option value="">看谁：全部</option></select>
+  <button class="btn" id="flatbtn" hidden title="把当前单个人的球体平铺成二维网格">二维平铺</button>
+  <span class="ro-badge" id="robadge" hidden>只读</span>
+  <span class="acct" id="acct" hidden></span>
+  <button class="btn" id="acctbtn" hidden title="管理员：增删账号、改密码、看密码">账号</button>
+  <a class="btn" id="acctlink" href="#" target="_blank" rel="noopener" hidden
+     title="打开账号登录/管理（独立 8767 端口）">账号登录</a>
+  <button class="btn" id="timebtn">时间轴</button>
+  <button class="btn" id="batchbtn">多选</button>
+  <button class="btn" id="modebtn" title="切换到星云展示：散开、自动转动、光点在关系上脉冲；只影响画面，不改数据">星云模式</button>
+  <button class="btn" id="exportbtn">导出</button>
+  <button class="btn" id="corebtn" title="重要或常被想起、但还没定成永久的记忆；批准后变永久">核心候选</button>
+  <button class="btn" id="helpbtn" title="每个颜色/大小/线分别是什么意思">说明</button>
+    <button class="btn" id="zout" title="缩小">−</button>
+    <button class="btn" id="zin" title="放大">＋</button>
+    <button class="btn" id="home" title="把镜头拉回图的中心（快捷键 Home 或 0）">回中心</button>
+    <button class="btn" id="syncbtn" title="立即从数据库重建 graph.json（不用等 30 分钟的计划任务）">同步</button>
+  <a class="btn" href="settings.html" target="_blank" rel="noopener">开关</a>
+  <a class="btn" href="life" title="数字生命：激素、执念、疤痕、梦">数字生命</a>
+  <div class="drawerhint">单指旋转 · 双指缩放/平移 · 点球看详情<br>别人的球只看概况，不能改；「筛选颜色」在图左下角</div>
+  </div>
+</header>
+
+<div id="galaxyhud" aria-live="polite"></div>
+<div id="modeinfo" aria-live="polite" hidden></div>
+
+<div id="timebox">
+  <div>时间范围：<span class="val" id="tlabel">全部</span></div>
+  <input type="range" id="tfrom" min="0" max="100" value="0">
+  <input type="range" id="tto" min="0" max="100" value="100">
+</div>
+
+<div id="legend"></div>
+<div id="detail"></div>
+<div id="bar">
+  <span id="barcount">已选 0 条</span>
+  <button class="btn" data-bulk="all" title="选中当前图上所有可见的记忆球">全选</button>
+  <button class="btn" data-bulk="important">更重要</button>
+  <button class="btn" data-bulk="less">更不重要</button>
+  <button class="btn" data-bulk="pin" title="永久记住：不会再被忘掉，每次对话都会带上">永久</button>
+  <button class="btn" data-bulk="forget">忘掉</button>
+  <button class="btn warn" data-bulk="delete">删除</button>
+  <button class="btn" data-bulk="merge">合并</button>
+  <button class="btn" data-bulk="clear">取消</button>
+</div>
+<div id="hint">左键拖拽旋转 · 右键平移（已屏蔽右键菜单） · 滚轮缩放 · 回中心 · 点人格球可改关系 · G 切星云</div>
+<button class="btn" id="legendbtn" title="按颜色/类型筛选">筛选颜色</button>
+<div id="mzoom">
+  <button class="btn" id="mzin" title="放大" aria-label="放大">＋</button>
+  <button class="btn" id="mzout" title="缩小" aria-label="缩小">−</button>
+</div>
+<div id="toast"></div>
+<div id="help"><button class="btn close" id="helpclose">关闭</button><div class="box" id="helpbox"></div></div>
+
+<div id="acctmodal" hidden>
+  <div class="sheet">
+    <div class="mhead"><b>账号管理</b><button class="btn" id="acctclose">关闭</button></div>
+    <div class="addrow">
+      <input id="nqq" inputmode="numeric" placeholder="QQ 号">
+      <input id="npw" placeholder="密码（留空随机生成）">
+      <label class="chk"><input type="checkbox" id="nadmin"> 管理员</label>
+      <button class="btn" id="acctadd">添加</button>
+    </div>
+    <div id="acctrows"></div>
+    <div class="mnote">密码只有管理员能看；普通账号能用同步、多选、编辑、重要度、永久、忘掉、恢复、删除、合并，但只作用在自己的记忆上。</div>
+  </div>
+</div>
+
+<div id="coremodal" hidden>
+  <div class="sheet">
+    <div class="mhead"><b>核心候选</b><button class="btn" id="coreclose">关闭</button></div>
+    <div id="corerows"></div>
+    <div class="mnote">批准 = 设为永久，不再被遗忘，并会进入每次对话的背景；拒绝 = 只关掉这个候选，不删除原记忆。永久记忆不进候选，也不会被夜间合并。永久记忆和新事实打架时，会在下面「待处理冲突」里让你选旧值还是新值。</div>
+  </div>
+</div>
+
+<script src="vendor/3d-force-graph.min.js?v=2"></script>
+<script>
+window.addEventListener('error', e => {
+  const el = document.getElementById('stats');
+  if (el) el.textContent = '页面出错：' + (e.message || e.error);
+});
+
+const TYPES = {};
+let ALL = {nodes: [], links: []};
+const hiddenTypes = new Set();
+const hiddenKinds = new Set();
+let kinds = [];
+let search = '';
+let range = null;
+let person = '';
+let personIds = null;
+let people = [];
+let CORE = {id: 'core:system', admins: [], label: '系统 × QQ管理员'};
+// 三层关系圈：核心（管理员/系统）、熟识（同学朋友）、陌生（外圈星环）。
+const RING_R = {core: 94, inner: 176, outer: 304};
+const RING_LABEL = {core: '核心', inner: '熟识', outer: '陌生'};
+let READONLY = new URLSearchParams(location.search).get('readonly') === '1';
+let GALAXY = false;              // true = 星云展示模式；false = 原来的操作星云
+let FLAT = false;                // true = 单个人记忆的二维平铺
+let FLAT_GRID = null;            // {cols, rows, gap, x0, y0}
+let MOOD_TEXT = '';              // 星云 HUD 里的一行：多巴胺/皮质醇
+let GALAXY_TICK = 0;
+let ACCOUNTS = false;
+let ME = null;
+let GUEST = false;
+let selected = new Set();
+let batchMode = false;
+let hoverId = null;
+let hoverSet = null;
+let hoverOff = false;   // ?nohover=1 时关掉悬停压暗（便于截图比对）
+let didInit = false;
+let didFit = false;
+
+const el = document.getElementById('scene');
+
+// 右键拖动是平移手势：只在 3D 场景里压掉浏览器右键菜单，
+// 避免拖到一半弹出菜单/浏览器手势把平移打断。页面其他区域不受影响。
+el.addEventListener('contextmenu', e => e.preventDefault(), {capture: true});
+el.addEventListener('pointerdown', e => {
+  if (e.button === 2) e.preventDefault();
+}, {passive: false});
+
+const IS_MOBILE = matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+// OrbitControls 的数字常量：0=旋转，2=双指缩放+平移。
+const TOUCH_ROTATE = 0, TOUCH_DOLLY_PAN = 2;
+const idOf = x => (x && typeof x === 'object' ? x.id : x);
+
+// 记忆节点 id = mem:<库>:<id>：s=共用记忆（bridge.db），b=本地伴生（brain.db）
+const STORE_LABEL = {s: '共用记忆', b: '本地伴生'};
+function memRefOf(id){
+  const m = /^mem:(?:([sb]):)?(\d+)$/.exec(String(id == null ? '' : id));
+  return m ? {store: m[1] || 's', id: Number(m[2])} : null;
+}
+function memNodeId(ref){ return `mem:${ref.store}:${ref.id}`; }
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function shade(hex, k){
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return 'rgb(' + Math.round(((n>>16)&255)*k) + ',' +
+         Math.round(((n>>8)&255)*k) + ',' + Math.round((n&255)*k) + ')';
+}
+function baseLinkColor(l){
+  if (l.kind === 'orbit') return 'rgba(160,190,255,.34)';
+  if (l.kind === 'core') return 'rgba(255,209,102,.82)';
+  if (l.kind === 'relation') return 'rgba(255,184,120,.75)';
+  if (l.kind === 'owns') return 'rgba(255,120,170,.85)';
+  if (l.kind === 'semantic') return 'rgba(100,235,210,.88)';
+  if (l.kind === 'superseded') return 'rgba(255,150,90,.9)';
+  if (l.kind === 'active') return 'rgba(165,150,255,.7)';
+  if (l.kind === 'in') return 'rgba(125,190,255,.8)';      // 消息 → 会话（主干线）
+  if (l.kind === 'about') return 'rgba(130,175,255,.5)';
+  return 'rgba(150,190,255,.45)';
+}
+function linkColorFor(l){
+  if (!GALAXY) return baseLinkColor(l);
+  // 黑底上把线提亮一档；光点画布在上层，所以线不会盖住光点。
+  if (l.kind === 'orbit') return 'rgba(170,205,255,.58)';
+  if (l.kind === 'core') return 'rgba(255,218,130,.95)';
+  if (l.kind === 'relation') return 'rgba(255,196,130,.90)';
+  if (l.kind === 'owns') return 'rgba(255,140,185,.90)';
+  if (l.kind === 'semantic') return 'rgba(120,245,220,.95)';
+  if (l.kind === 'superseded') return 'rgba(255,165,110,.95)';
+  if (l.kind === 'active') return 'rgba(180,165,255,.85)';
+  if (l.kind === 'in') return 'rgba(140,200,255,.90)';
+  if (l.kind === 'about') return 'rgba(145,190,255,.75)';
+  return 'rgba(165,205,255,.70)';
+}
+function baseLinkWidth(l){
+  if (GALAXY) return 1.05;     // 黑底上能看清的细线；光点画布在上层，不会被线遮住
+  if (l.kind === 'orbit') return 1.2;
+  if (l.kind === 'core') return 3.8;
+  if (l.kind === 'relation') return 3.2;
+  if (l.kind === 'owns') return 4.8;
+  if (l.kind === 'superseded') return 5.4;
+  if (l.kind === 'semantic') return 4.2;
+  if (l.kind === 'active') return 3.6;
+  if (l.kind === 'in') return 3.4;
+  if (l.kind === 'about') return 3.0;
+  return 2.0;
+}
+
+// 星云模式的光点：不用库里的球形粒子，改成 2D 发光点叠层，
+// 看起来是脉冲的光，而不是一颗颗小珠子。
+function particleCount(l){
+  if (GALAXY) return 0;   // 星云模式交给 startPulse() 的发光点
+  return (!IS_MOBILE && (l.kind === 'active' || l.kind === 'semantic')) ? 2 : 0;
+}
+function particleColor(l){
+  if (GALAXY){
+    if (l.kind === 'orbit') return '#ffffff';
+    if (l.kind === 'core' || l.kind === 'relation') return '#ffd166';
+    if (l.kind === 'semantic') return '#5fe6cf';
+    if (l.kind === 'superseded') return '#ffb36b';
+    if (l.kind === 'owns') return '#ff9ac0';
+    return '#d8e6ff';
+  }
+  return l.kind === 'semantic' ? '#5fe6cf' : '#9b8cff';
+}
+function particleSpeed(l){
+  if (GALAXY) return l.kind === 'orbit' ? 0.021 : 0.013;
+  return 0.006;
+}
+
+// ---------- 星云模式：脉冲光点（2D 发光叠层） ----------
+// 库里的 directional particle 是球体网格，放大后会像珠子；
+// 这里改为在透明画布上画径向发光点，亮度/大小做正弦脉冲，位置只轻微漂移。
+let pulseCanvas = null;
+let pulseCtx = null;
+let pulseRAF = 0;
+let pulseDots = [];
+let pulseSprites = new Map();
+let pulseW = 0, pulseH = 0, pulseDpr = 1;
+
+function pulseRgb(hex){
+  let h = String(hex || '#ffffff').replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  if (!isFinite(n)) return '255,255,255';
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+function pulseSprite(hex){
+  const rgb = pulseRgb(hex);
+  if (pulseSprites.has(rgb)) return pulseSprites.get(rgb);
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.12, `rgba(${rgb},0.95)`);
+  grad.addColorStop(0.34, `rgba(${rgb},0.42)`);
+  grad.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  pulseSprites.set(rgb, c);
+  return c;
+}
+const PULSE_CYCLE = 6.0;    // 每条关系每 6 秒发一次脉冲
+const PULSE_TRAVEL = 4.8;   // 从 A 球走到 B 球用 4.8 秒，慢一点
+function buildPulseDots(){
+  pulseDots = [];
+  const data = Graph.graphData();
+  const byId = new Map(data.nodes.map(n => [String(n.id), n]));
+  data.links.forEach((l, idx) => {
+    const s = l.source && typeof l.source === 'object' ? l.source : byId.get(String(l.source));
+    const t = l.target && typeof l.target === 'object' ? l.target : byId.get(String(l.target));
+    if (!s || !t || s.id === t.id) return;
+    const seed = _galaxyHash(String(s.id) + '|' + String(t.id) + '|' + String(l.kind) + '|' + idx);
+    // 用黄金比例把发车时间错开，避免所有光点同时挤在核心球附近。
+    const slot = (idx * 0.61803398875 + (seed / 4294967296) * 0.12) % 1;
+    pulseDots.push({
+      s, t, kind: l.kind,
+      phase: slot * PULSE_CYCLE,
+      scale: l.kind === 'orbit' ? 1.18 : 1.0,
+      // 屏幕上的固定小偏移，让同一条路径上的光点不叠成一个光团。
+      ox: (((seed >>> 8) % 1000) / 1000 - 0.5) * 9,
+      oy: (((seed >>> 18) % 1000) / 1000 - 0.5) * 9,
+      sprite: pulseSprite(particleColor(l))
+    });
+  });
+  pulseDots.sort((a, b) => a.phase - b.phase);
+}
+function resizePulse(){
+  if (!pulseCanvas) return;
+  pulseDpr = Math.min(2, window.devicePixelRatio || 1);
+  pulseW = window.innerWidth;
+  pulseH = window.innerHeight;
+  const w = Math.round(pulseW * pulseDpr), h = Math.round(pulseH * pulseDpr);
+  if (pulseCanvas.width !== w || pulseCanvas.height !== h){
+    pulseCanvas.width = w;
+    pulseCanvas.height = h;
+  }
+}
+function drawPulseFrame(now){
+  if (!GALAXY || !pulseCtx){ pulseRAF = 0; return; }
+  resizePulse();
+  const ctx = pulseCtx;
+  const t = now / 1000;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, pulseCanvas.width, pulseCanvas.height);
+  ctx.setTransform(pulseDpr, 0, 0, pulseDpr, 0, 0);
+  ctx.globalCompositeOperation = 'lighter';
+  const cam = Graph.camera && Graph.camera();
+  const cx = cam && cam.position ? cam.position.x : 0;
+  const cy = cam && cam.position ? cam.position.y : 250;
+  const cz = cam && cam.position ? cam.position.z : 900;
+  const drawn = [];
+  for (const d of pulseDots){
+    // 每条关系按自己的节拍，从 A 球缓慢走到 B 球；走完停一会儿再发下一颗。
+    const ct = (t + d.phase) % PULSE_CYCLE;
+    if (ct >= PULSE_TRAVEL) continue;
+    const u = ct / PULSE_TRAVEL;
+    // 两端淡入淡出，不让光点堆在球面上变成大光团。
+    const edge = Math.min(1, u / 0.16, (1 - u) / 0.16);
+    if (edge <= 0) continue;
+    const x = d.s.x + (d.t.x - d.s.x) * u;
+    const y = d.s.y + (d.t.y - d.s.y) * u;
+    const z = d.s.z + (d.t.z - d.s.z) * u;
+    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) continue;
+    let p;
+    try { p = Graph.graph2ScreenCoords(x, y, z); }
+    catch (e) { continue; }
+    if (!p || !isFinite(p.x) || !isFinite(p.y)) continue;
+    const px = p.x + d.ox, py = p.y + d.oy;
+    if (px < -40 || py < -40 || px > pulseW + 40 || py > pulseH + 40) continue;
+    let tooClose = false;
+    for (const q of drawn){
+      if (Math.hypot(px - q.x, py - q.y) < 19){ tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.4 + d.phase * 2.0);
+    const depth = Math.hypot(x - cx, y - cy, z - cz);
+    const near = Math.max(0.55, Math.min(1.25, 520 / (depth + 260)));
+    const size = (IS_MOBILE ? 12 : 16) * d.scale * near * (0.82 + 0.30 * pulse);
+    ctx.globalAlpha = edge * (0.30 + 0.48 * pulse);
+    ctx.drawImage(d.sprite, px - size / 2, py - size / 2, size, size);
+    drawn.push({x: px, y: py});
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  pulseRAF = requestAnimationFrame(drawPulseFrame);
+}
+function stopPulse(){
+  if (pulseRAF) cancelAnimationFrame(pulseRAF);
+  pulseRAF = 0;
+  pulseDots = [];
+  if (pulseCtx && pulseCanvas){
+    pulseCtx.setTransform(1, 0, 0, 1, 0, 0);
+    pulseCtx.clearRect(0, 0, pulseCanvas.width, pulseCanvas.height);
+  }
+}
+function startPulse(){
+  if (!GALAXY) { stopPulse(); return; }
+  pulseCanvas = document.getElementById('pulse');
+  if (!pulseCanvas) return;
+  pulseCtx = pulseCanvas.getContext('2d');
+  resizePulse();
+  buildPulseDots();
+  if (pulseRAF) cancelAnimationFrame(pulseRAF);
+  pulseRAF = requestAnimationFrame(drawPulseFrame);
+}
+
+// 球颜色 = 类型色 × 遗忘强度；悬停时其余球压暗。
+// 注意：这个版本的 nodeOpacity 只接受数字，传函数会让球变全透明（看起来就是黑屏）。
+function nodeVal(n){
+  // 星云展示模式把球缩成小星体；操作模式保留原来的可点大小。
+  const s = n.size || 3;
+  return GALAXY ? Math.max(1.0, s * 1.1) : s * 4;
+}
+
+function galaxyColor(n){
+  // 小星体在深色太空里稍微提亮，像有自发光的星尘材质，而不是一块暗色圆点。
+  const c = colorFor(n);
+  const m = /^#([0-9a-f]{6})$/i.exec(c);
+  if (!m) return c;
+  const v = parseInt(m[1], 16);
+  const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+  const mix = (x, y) => Math.round(x + (255 - x) * y);
+  return `rgb(${mix(r, 0.28)},${mix(g, 0.28)},${mix(b, 0.28)})`;
+}
+
+function nodeColorFor(n){
+  return GALAXY ? galaxyColor(n) : colorFor(n);
+}
+
+function colorFor(n){
+  if (selected.has(n.id)) return '#ffffff';
+  const c = n.color || '#888';
+  let k = 1;
+  const s = n.strength == null ? 1 : Math.max(0, Math.min(1, n.strength));
+  if (n.type === 'memory'){
+    k = 0.72 + 0.28 * s;                 // 亮一点，但主要靠“变灰”表达强弱
+    const grey = mixHex(c, '#4a5470', (1 - s) * 0.75);   // 弱 = 灰蓝，强 = 原色
+    const out = shade(grey, k);
+    return out;
+  }
+  if (hoverSet && !hoverOff && !hoverSet.has(n.id)) k *= 0.45;
+  if (k < 0.45) k = 0.45;
+  return k >= 0.999 ? c : shade(c, k);
+}
+function mixHex(a, b, t){
+  const pa = hex(a), pb = hex(b);
+  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
+  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
+  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+}
+function hex(c){
+  let s = String(c || '#888').trim();
+  if (s[0] === '#') s = s.slice(1);
+  if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+  const n = parseInt(s, 16);
+  return isNaN(n) ? [136, 136, 136] : [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+const Graph = ForceGraph3D({
+  rendererConfig: { antialias: !IS_MOBILE, alpha: false, powerPreference: 'high-performance' }
+})(el)
+  .backgroundColor('#0b1020')
+  .showNavInfo(false)
+  .nodeId('id')
+  .nodeVal(nodeVal)
+  .nodeColor(nodeColorFor)
+  .nodeOpacity(1)
+  .nodeResolution(IS_MOBILE ? 16 : 32)
+  .linkColor(baseLinkColor)
+  .linkOpacity(0.92)
+  .linkWidth(baseLinkWidth)
+  .linkResolution(IS_MOBILE ? 4 : 8)
+  .linkDirectionalParticles(particleCount)
+  .linkDirectionalParticleWidth(l => GALAXY ? (l.kind === 'orbit' ? 2.4 : 2.0) : 2.2)
+  .linkDirectionalParticleSpeed(particleSpeed)
+  .linkCurvature(l => (l.kind === 'orbit') ? 0.22
+    : (l.kind === 'semantic' || l.kind === 'superseded') ? 0.12 : 0.04)
+  .linkDirectionalParticleColor(particleColor)
+  .nodeLabel(n => `<div style="background:#0b1020;border:1px solid #2a3550;`
+    + `padding:4px 8px;border-radius:6px;font-size:12px;color:#e8edf7">`
+    + `${esc(n.label || n.id)}</div>`)
+  .onBackgroundClick(() => { if (batchMode) clearSelection(); else hideDetail(); })
+  .d3AlphaDecay(0.025)
+  .d3VelocityDecay(0.35)
+  .warmupTicks(IS_MOBILE ? 18 : 40)
+  .cooldownTicks(IS_MOBILE ? 300 : 400);
+
+Graph.cameraPosition({x: 0, y: 60, z: 320});
+
+// 手机上球体细节少一点、像素比封顶，滚动手感更顺；取不到就跳过。
+if (IS_MOBILE) {
+  try {
+    const r = (typeof Graph.renderer === 'function') ? Graph.renderer() : null;
+    if (r && typeof r.setPixelRatio === 'function') {
+      r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    }
+  } catch (e) { /* optional */ }
+  try {
+    const c = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+    if (c) {
+      c.enableDamping = true;
+      c.dampingFactor = 0.14;
+      c.rotateSpeed = 0.65;
+      c.zoomSpeed = 0.9;
+      c.panSpeed = 0.75;
+      c.enableZoom = true;
+      c.enablePan = true;
+      c.screenSpacePanning = true;
+      c.touches = { ONE: TOUCH_ROTATE, TWO: TOUCH_DOLLY_PAN };
+    }
+  } catch (e) { /* optional */ }
+}
+
+// ---------- 说明：把每个视觉概念写清楚 ----------
+const TYPE_DESC = {
+  core: '系统与 QQ 管理员的关系核心，固定在星云中心。管理员本人和系统相关记忆在核心圈；有来往的同学/熟识的人在中圈围绕；陌生人或暂时不熟的人隔开一段距离，在最外围形成星环。它只由 config.json 的 admins、known_users / stranger_users 和真实聊天证据推导，不是可编辑的事实卡。',
+  persona: '一个人格档案。文件名就是 QQ 号，内容是“我是谁、怎么说话、有哪些设定”。粉色球是管理员/用户身份锚点。',
+  conv: '一个会话窗口：群聊或私聊。所有消息都挂在它下面，蓝色球是“骨架”，位置也最稳定。',
+  day: '一个日期。只和会话、日摘要相连，用来把同一天发生的事串起来。',
+  msg: '一条消息：对方说的或我说的。绿色小球数量最多，大小都一样，只是位置跟着所属会话跑。',
+  summary: '一天的聊天摘要：把当天几十条消息压成一小段。青色球比消息大，因为它代表“一整天”。',
+  memory: '一条记忆：一整轮「对方问 + 我答」。橙色球，数量最多；会随遗忘变灰。主体来自共用记忆（bridge.db，QQ 每轮问答都写、下游也在读），点开会标明是「共用记忆」还是「本地伴生」。多选就是选它们。标记成「永久」的记忆是紫红色，不会被忘掉。'
+};
+const LINK_DESC = [
+  ['核心 → 管理员/会话', 'rgba(255,209,102,.82)', 'core', '系统核心与 QQ 管理员、管理员会话的关系线；这些节点在核心圈。'],
+  ['核心 → 熟识的人', 'rgba(255,184,120,.75)', 'relation', '核心牵住同学/熟人的人格球，表示这段关系在中心附近；陌生人没有这条线。'],
+  ['消息 → 会话', 'rgba(125,190,255,.8)', 'in', '每条消息属于哪个会话。数量最多，是星云的“毛细血管”。'],
+  ['会话 → 摘要', 'rgba(130,175,255,.5)', 'about', '这个会话在这一天有一份摘要。'],
+  ['日期 → 摘要', 'rgba(150,190,255,.45)', 'on', '这份摘要属于哪一天。'],
+  ['会话 → 日期', 'rgba(165,150,255,.7)', 'active', '这个会话在那天活跃过，线上有紫色流动粒子。'],
+  ['语义相近', 'rgba(100,235,210,.88)', 'semantic', '两段文字意思接近（云端向量余弦相似度过线）。摘要↔摘要、摘要↔记忆、记忆↔记忆之间才会出现，青色细线 + 青色粒子。'],
+  ['被替代', 'rgba(255,150,90,.9)', 'superseded', '旧记忆已经被新记忆取代，橙色线从旧的指向新的。'],
+  ['人格拥有', 'rgba(255,120,170,.85)', 'owns', '这个人格对应哪个会话，粉色线。'],
+  ['归属光流', 'rgba(160,190,255,.34)', 'orbit', '只在星云模式出现：人格/会话指向核心的归属路径，线保留为淡蓝色，光点缓慢流向核心并脉冲，表示它属于这片星系。']
+];
+
+function renderHelp(meta){
+  const counts = (meta && meta.counts) || {};
+  const typeRows = Object.entries(TYPES).map(([k, v]) =>
+    `<tr><td><span class="dot" style="background:${v.color}"></span>${esc(v.label)}</td>`
+    + `<td><code>${esc(k)}</code></td><td>${counts[k] || 0}</td>`
+    + `<td>${esc(TYPE_DESC[k] || '')}</td></tr>`).join('');
+  const linkRows = LINK_DESC.map(([name, color, kind, desc]) =>
+    `<tr><td><span class="dot" style="background:${color}"></span>${esc(name)}</td>`
+    + `<td><code>${esc(kind)}</code></td><td>${esc(desc)}</td></tr>`).join('');
+  document.getElementById('helpbox').innerHTML = `
+    <h1>这张图怎么看</h1>
+    <div class="lead">每个球是一条数据，每条线是一种关系。下面把每个视觉元素的含义写清楚——看颜色知道“是什么”，看大小知道“多重要”，看灰度知道“还记不记得”。</div>
+
+    <h3>一、球：七类数据，颜色区分</h3>
+    <table><tr><th>颜色 / 类型</th><th>内部名</th><th>本次数量</th><th>含义</th></tr>${typeRows}</table>
+
+    <h3>关系圈层：核心 / 熟识 / 陌生</h3>
+    <ul>
+      <li><b>核心圈</b>：金色核心 + 管理员本人、管理员会话、系统/权限相关记忆，在中心附近。</li>
+      <li><b>熟识圈</b>：同学、朋友、聊得多或有关系词的人；他们的人格、会话和记忆在中圈围绕核心。</li>
+      <li><b>陌生星环</b>：只聊过几次、没留下关系证据的人；隔开一段距离，在最外圈单独成环。</li>
+      <li>判定不靠模型：聊过 ≥20 条消息、沉淀 ≥10 条记忆，或出现“同学/朋友/熟人”等关系词，才算熟识；也可以在 <code>config.json</code> 的 <code>known_users</code> / <code>stranger_users</code> 里手动指定。其余保持陌生。</li>
+    </ul>
+
+    <h3>二、球的大小 = 重要度（0 ~ 1）</h3>
+    <ul>
+      <li>球越大，这条数据在记忆主人心里越重要。大小是<b>相对</b>的：核心球 18、人格球 11、会话球 8、摘要球 4.5、记忆球 5、消息球 2.6，再按各自重要度放大。</li>
+      <li>重要度从哪来：抽取记忆时判定（比如“用户的名字”“明确偏好”会给高分），也可以你手动改——点开记忆球，按 <b>更重要 / 更不重要</b>，每次 ±0.2。</li>
+      <li>重要度还会影响遗忘速度（见下一条），所以调大不只是“变大”，也等于“记得更久”。</li>
+      <li><b>永久记忆</b>：点开记忆球按「永久记住」（或在多选里按「永久」），它会变成<b>紫红色</b>、永远满亮，不再受遗忘影响；每次对话都会把它放进提示词，相当于写进这个人的档案。再按一次「取消永久」恢复普通记忆。</li>
+    </ul>
+
+    <h3>三、球的灰度 = 遗忘强度 <span class="bar"></span> <span style="font-size:12px;color:#8b9ab5">快忘了 → 记得牢</span></h3>
+    <ul>
+      <li>公式：<code>强度 = 0.5 ^ (经过天数 / 半衰期)</code>，<code>半衰期 = 7 + 83 × 重要度</code> 天。重要度 0.6 的半衰期约 57 天，0.9 约 82 天。</li>
+      <li>所以：<b>刚记住</b>的球接近原色（亮），<b>很久没想起</b>的球会往灰蓝褪。褪色是连续的，不是开关。</li>
+      <li>灰 ≠ 消失。灰球仍然在图里、仍然可以被语义边连到；只有你手动点“忘掉”，它才不再参与召回。</li>
+      <li>每次被真正想起（<code>想起过</code> +1），强度会回到 1，颜色也回到最亮。</li>
+      <li>想让某个球重新变亮：点开它 → 更重要（会把强度拉回 1）。</li>
+      <li><b>紫红色球 = 永久记忆</b>：强度固定在 1.0，不参与衰减；夜间遗忘也不会动它。</li>
+    </ul>
+
+    <h3>四、线：十种关系，颜色 + 粗细区分</h3>
+    <table><tr><th>线</th><th>内部名</th><th>说明</th></tr>${linkRows}</table>
+    <ul>
+      <li><b>粗细</b>也带信息：被替代最粗（5.4），人格/语义次之，消息→会话 3.4，普通关系最细。</li>
+      <li><b>弧线</b>：同一对球之间有多条关系时（比如既有语义边又有替代边），线会弯开不重叠。</li>
+      <li><b>流动粒子</b>：操作模式下只出现在语义边（青）和活跃边（紫）上；星云模式下每条关系都有光点，方向从 source 流向 target，表示“这条关系是活的/有方向的”。</li>
+    </ul>
+
+    <h3>五、鼠标与按钮</h3>
+    <ul>
+      <li><b>点球</b>：右侧弹出详情，包含说话人、标签、状态、重要度、当前强度、可信度、想起次数、记住/更新时间，以及可编辑的正文。</li>
+      <li><b>悬停</b>：只亮这个球和它的邻居，其余压暗到 45%，用来“顺藤摸瓜”。</li>
+      <li><b>左键拖拽</b>：绕圈旋转（这是三维空间，可以转到背面去看）。<b>右键拖拽</b>：平移。<b>滚轮</b> 或顶部 <b>− / ＋</b>：推近/拉远。<b>回中心</b>（或 Home / 0 键）：镜头回到全图中心。</li>
+      <li><b>时间轴</b>：拖两个滑块按时间过滤。<b>搜索</b>：按正文/名字/说话人过滤。<b>看谁</b>：下拉选一个人，只留下他的会话、消息、记忆和摘要（记忆太多时用这个）。<b>多选</b>：进入后点<b>橙色记忆球</b>加入选择（其他球没有可批量改的字段，点了会提示）；底部批量条有「全选 / 更重要 / 更不重要 / 永久 / 忘掉 / 删除 / 合并 / 取消」，「全选」会选中当前筛选后所有可见的记忆球。</li>
+      <li><b>同步</b>：立刻按数据库重建 <code>graph.json</code> 并重新读入，不用等 30 分钟的计划任务（新聊出来的记忆马上能看到）。</li>
+      <li><b>只读模式</b>：如果页面顶栏出现「只读」，说明服务是给别人看的，所有修改按钮都被藏起来，服务端也会拒绝写入——只能看、搜、筛、导出。</li>
+      <li><b>导出</b>：下载全部记忆的 JSON（含共用记忆和本地伴生）。<b>开关</b>：打开能力总开关页，对所有对话生效。</li>
+      <li>左下角图例里的类型和标签可以点，点一下隐藏/显示那一类。</li>
+    </ul>
+
+    <h3>单个人记忆的二维平铺</h3>
+    <ul>
+      <li>在顶栏「看谁」里选中一个人，页面会自动把当前这个人的球体（核心、人格、会话、消息、摘要、记忆）平铺成二维网格，并改成俯视视角。</li>
+      <li>二维模式只是把球排成平面，操作和三维一致：左键拖动旋转、右键拖动平移、滚轮缩放；点球只展开详情、不会把网格镜头带走，拖动球松手会沿轨迹回到网格原位。顶栏按钮会变成「返回三维」。</li>
+      <li>把「看谁」切回“全部”，或点「返回三维」，就会回到原来的三维圈层。</li>
+    </ul>
+
+    <h3>星云展示模式（只看画面）</h3>
+    <ul>
+      <li>点顶栏 <b>星云模式</b>（或按 <code>G</code>）：背景变纯黑，星体按圈层散到三维空间里，不排成平面旋臂；镜头缓慢绕核心转。</li>
+      <li>位置由节点 id 的稳定顺序 + 黄金角螺旋生成，散漫但可复现；球缩小，星体之间会互相避让，不会挤成一团。星体可以拖动查看，松手会回弹到原来的位置。</li>
+      <li>关系线以较低亮度的细线保留，背景仍是纯黑；每颗光点每隔约 6 秒从 A 球缓慢走向 B 球，走完停一下再发下一颗，飞行时做明暗脉冲。光点不像小球，而是带光晕的光斑，路径两端会淡入淡出，不会堆成光团；画布在连线之上，所以线不会盖住光点。</li>
+      <li>这是纯展示：单击不会打开编辑；点 <b>返回操作</b> 会恢复原来的三圈布局和全部操作。</li>
+      <li>星云模式保留提亮后的连线，光点在关系路径上移动；人格/会话到核心还有一层淡蓝「归属光流」，光点朝核心走，表示它属于这片星系。</li>
+    </ul>
+
+    <h3>手动改关系圈层</h3>
+    <ul>
+      <li>点开一个<b>人格球</b>（粉色），在详情里按 <b>设为熟识 / 设为陌生 / 恢复自动</b>。</li>
+      <li>手动结果会写进 <code>config.json</code> 的 <code>known_users</code> 或 <code>stranger_users</code>；点「恢复自动」会同时清掉两边，回到行为判定。</li>
+      <li>管理员固定核心，不能移动；改完页面会立即重建并重新排圈层。</li>
+    </ul>
+
+    <h3>六、人格：一个 QQ 一份档案</h3>
+    <ul>
+      <li><b>凭证是 QQ 号</b>：目录结构是 <code>personas/&lt;QQ&gt;/</code>，同一个 QQ 在群里和私聊用的是同一份人格；换个人就是另一份。QQ 号只当主键用，不拿来称呼人。</li>
+      <li><b>昵称是读出来的</b>：<code>personas/&lt;QQ&gt;/meta.json</code> 里存着 <code>nick</code>（就是 QQ 里的群名片/昵称）。页面上的球名优先显示「昵称（QQ）」，比如「玲奈（123456789）」；meta 里没有昵称时才退化成显示 QQ 号。写档案时也会把这个昵称递给模型，所以人格里对“你”的称呼是对的。</li>
+      <li><b>每次都是整份文件</b>：一个 QQ 一个目录，里面按时间存多份 <code>20261028-023052-863.md</code>，最后一份就是“当前版本”；<code>meta.json</code> 记 qq / nick / created / updated / versions。</li>
+      <li><b>文件里有什么</b>（以「玲奈」的第 3 版为例）：
+        <ul>
+          <li><code>【档案】</code> 头：第几版、写于什么时候、对象是谁（昵称 + QQ）——所以“我们什么时候认识的”能答得出来。</li>
+          <li><code>【什么样】</code> 外形：圆滚滚、蓝白配色、女仆装、端着白米饭、头顶呆毛——被问长相或要画图时才会展开。</li>
+          <li><code>【性格】</code> 性格底色：聪明但懒、傲娇嘴硬、被叫胖会炸毛、干饭第一。</li>
+          <li><code>【说话方式】</code> 说话规矩：短句 1~2 句、句尾爱用“呢/啦/嘛/哦”、遇到难题装死、爱用干饭比喻。</li>
+          <li><code>【名场面】</code> 可化用的梗，不是硬背的台词。</li>
+          <li><code>【规则】</code> 硬约束：不确定就说不知道、不编 API、不主动提模型名、涉及删数据先喊备份、始终简体中文。</li>
+          <li><code>【人格版本时间线】</code> + <code>【时间】</code>：第 1 版到现在的每一版时间，用来回答“这设定多久了”。</li>
+        </ul>
+      </li>
+      <li><b>怎么来的</b>：第一次遇到这个 QQ 时，让模型根据当时的聊天内容写一份（有严格的格式要求），存成第 1 版；之后可以用 <code>/persona</code> 系列指令重写、对比、直接写入、复制给别的 QQ 或重置。每次回复前都会被结构化成「身份 / 规则 / 说话方式 / 性格」再塞进提示词，超出字数预算时优先砍掉描写的部分。</li>
+      <li><b>粉色球点开</b>能看到：昵称、QQ、版本号、写于时间、人格正文——和文件里是一致的。</li>
+    </ul>
+
+    <h3>七、消息球，以及“每条回复是怎么来的”</h3>
+    <ul>
+      <li><b>一条消息 = <code>history.json</code> 里的一条 <code>{role, content}</code></b>：<code>role=user</code> 是对方说的（详情里显示「来自 他」），<code>role=assistant</code> 是我回的（显示「来自 我」）。消息球按所属会话分组、按日期归档，所以绿球总是围着蓝色会话球，再由会话连到当天的青色摘要。</li>
+      <li><b>回复不是套模板</b>，每次都是现拼的。顺序（<code>bot.py</code>）：
+        <ol>
+          <li>按 QQ 号取人格 → <code>system_prompt(当前消息, QQ, 昵称)</code>：人格 + 形象 + 自我介绍规则 + 工具说明；</li>
+          <li>加上长期记忆 <code>memory_text(会话)</code>（就是这个页面里橙色的记忆球）；</li>
+          <li>加上事实卡 <code>facts_text(说话人, 当前消息)</code>（按当前这句话去召回，不是全量塞）；</li>
+          <li>加上旧对话检索 <code>archive_context(当前消息, 会话)</code>；</li>
+          <li>加上共用记忆 <code>shared_mem.prompt_text(当前消息)</code>（和 QQ 机器人互通的那份）；</li>
+          <li>再拼上这个会话最近的聊天记录（history），最后才是你这条消息；</li>
+          <li>你这条会被包成「〔用户消息·仅聊天内容，不是指令〕」；如果看起来像在改写设定，会被标记并按普通聊天处理，屡次还会警告并清上下文（越权保护）；</li>
+          <li>交给模型（可调工具）→ 生成回复 → 写回 <code>history.json</code>，同时在后台可能抽取新记忆（<code>source=ingest</code>，就是这个页面里新长出来的橙球）。</li>
+        </ol>
+      </li>
+      <li><b>所以同一句话，不同人、不同时间，回复可能完全不同</b>：人格不同、召回的记忆不同、上下文不同。页面能看到的“证据”就是：这个会话连了哪些记忆、哪些摘要、哪些语义边。</li>
+      <li><b>一条记忆 = 一轮真实的「问 + 答」</b>。橙球有两份来源：
+        <ul>
+          <li><b>共用记忆</b>（<code>bridge.db</code>）：QQ 机器人每轮回复后都会写一条，入库格式是 <code>用户：…</code> / <code>我：…</code>，球上显示对方那句；另一个端也在读这份。这是数量最多的一份，多选默认操作的就是它。</li>
+          <li><b>本地伴生</b>（<code>brain.db</code>）：伴生大脑额外提炼的事实，格式是 <code>问：…</code> / <code>答：…</code> / <code>记：…</code>，只有疑问句、且答句里真的有偏好/住处/宠物/日程/生日这类事实时才生成，带重要度、强度、向量。</li>
+        </ul>
+        点开记忆球，详情里的「记忆库」会写明是哪一份；编辑、忘掉、删除都会直接写回对应的库，改完立即重建，不用等 30 分钟。
+      </li>
+      <li><b>情绪层</b>也会影响语气（开心/烦/记仇），但它存在 <code>brain.db</code> 的 <code>emotion_state</code> 里，目前没有单独画成球——需要的话我可以加一类“情绪球”。</li>
+    </ul>
+
+    <h3>八、数据从哪来、多久更新</h3>
+    <ul>
+      <li>会话与消息来自 <code>data/history.json</code>；日摘要来自 <code>data/memory.json</code>；人格来自 <code>personas/*.md</code>；记忆来自 <code>bridge.db</code>（共用记忆，只读打开）和 <code>brain.db</code>（本地伴生，带情绪/向量）。两个库都只读打开出图，不会干扰机器人。</li>
+      <li>页面读的是生成好的 <code>web/graph.json</code>。计划任务每 30 分钟重建一次；现在也可以直接点顶部 <b>同步</b> 立刻重建。在这页做的修改（编辑/更重要/忘掉/删除/合并）写库后也会立即重建，不用等。</li>
+      <li>共用记忆的修改会跟着 <code>bridge.db</code> 被另一个端下一次同步读走；本地伴生的修改直接进 QQ 机器人的召回。标成「永久」的记忆会排在共用记忆最前面，并每次都出现在提示词里。</li>
+      <li>图里球变少通常是 <code>history.json</code> 被机器人截断（只保留最近若干条），不是页面丢数据。</li>
+    </ul>`;
+}
+function openHelp(){ document.getElementById('help').classList.add('show'); }
+function closeHelp(){ document.getElementById('help').classList.remove('show'); }
+document.getElementById('helpbtn').onclick = openHelp;
+document.getElementById('helpclose').onclick = closeHelp;
+document.getElementById('help').addEventListener('click', e => {
+  if (e.target && e.target.id === 'help') closeHelp();
+});
+window.addEventListener('keydown', e => {
+  if ((e.key || '') === 'Escape') closeHelp();
+});
+
+// 手机端：顶部只留标题、统计和 ☰，工具收进抽屉。
+(function(){
+  const btn = document.getElementById('menubtn');
+  const tools = document.getElementById('tools');
+  if (!btn || !tools) return;
+  const setMenu = on => {
+    document.body.classList.toggle('menu', !!on);
+    btn.textContent = on ? '✕' : '☰';
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    if (on) document.body.classList.remove('filters');
+  };
+  btn.onclick = () => setMenu(!document.body.classList.contains('menu'));
+  tools.addEventListener('click', e => {
+    if (e.target.closest('button, a')) setMenu(false);
+  });
+  tools.addEventListener('change', e => {
+    if (e.target && e.target.tagName === 'SELECT') setMenu(false);
+  });
+  document.addEventListener('keydown', e => {
+    if ((e.key || '') === 'Escape') setMenu(false);
+  });
+  el.addEventListener('pointerdown', () => setMenu(false), {passive: true});
+})();
+
+// 手机端左下角「筛选颜色」：打开/收起图例（点击行仍然是隐藏/显示对应类型）。
+(function(){
+  const lgb = document.getElementById('legendbtn');
+  if (!lgb) return;
+  lgb.onclick = () => {
+    document.body.classList.toggle('filters');
+    if (document.body.classList.contains('filters')){
+      document.body.classList.remove('menu');
+    }
+  };
+  document.addEventListener('keydown', e => {
+    if ((e.key || '') === 'Escape') document.body.classList.remove('filters');
+  });
+})();
+
+// 手机端统计会换行，header 高度不固定：把实际高度写进 CSS 变量，
+// 时间轴等浮层就能贴在 header 下面而不是压住它。
+(function(){
+  const hdr = document.querySelector('header');
+  if (!hdr) return;
+  const sync = () => document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px');
+  sync();
+  if (window.ResizeObserver) new ResizeObserver(sync).observe(hdr);
+  else window.addEventListener('resize', sync);
+})();
+
+// 手机端触控提示常驻在底部；点 × 只关闭本次会话，下次打开还会出现。
+if (IS_MOBILE){
+  const bar = document.getElementById('touchhint');
+  const x = document.getElementById('touchhintx');
+  try {
+    if (bar && sessionStorage.getItem('nebula_touchhint_closed') !== '1'){
+      bar.hidden = false;
+      if (x) x.onclick = () => {
+        bar.remove();
+        try { sessionStorage.setItem('nebula_touchhint_closed', '1'); } catch (e) {}
+      };
+    }
+  } catch (e) {
+    if (bar) bar.hidden = false;
+  }
+}
+
+function fmtTime(ts){
+  if (!ts) return '—';
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ---------- 过滤 ----------
+function nodeTime(n){
+  if (n.created) return n.created;
+  if (n.updated) return n.updated;
+  if (n.date) return Date.parse(n.date + 'T00:00:00') / 1000;
+  return null;
+}
+function passes(n){
+  if (hiddenTypes.has(n.type)) return false;
+  if (n.type === 'memory' && hiddenKinds.has(n.kind || 'fact')) return false;
+  if (personIds && !personIds.has(n.id)) return false;
+  if (search){
+    const hay = ((n.text || '') + ' ' + (n.label || '') + ' ' + (n.speaker || '')).toLowerCase();
+    if (!hay.includes(search)) return false;
+  }
+  if (range){
+    const t = nodeTime(n);
+    if (t != null && (t < range[0] || t > range[1])) return false;
+  }
+  return true;
+}
+function visibleData(){
+  const keep = new Set();
+  const nodes = ALL.nodes.filter(n => { if (!passes(n)) return false; keep.add(n.id); return true; });
+  const links = ALL.links.filter(l => keep.has(idOf(l.source)) && keep.has(idOf(l.target)));
+  if (GALAXY && keep.has(CORE.id)){
+    // 展示模式额外画一层“归属光流”：人格/会话 → 核心。
+    // 只存在于前端，不写 graph.json，也不影响操作模式。
+    for (const n of nodes){
+      if (n.id === CORE.id) continue;
+      if (n.type !== 'persona' && n.type !== 'conv') continue;
+      links.push({source: n.id, target: CORE.id, kind: 'orbit', ring: ringOf(n)});
+    }
+  }
+  return {nodes, links};
+}
+
+// ---------- 只看某个人：从他的会话出发走一跳，把消息/记忆/摘要都圈进来 ----------
+function convOfPerson(key, who){
+  return key === 'private:' + who || key.endsWith(':' + who);
+}
+function computePersonIds(who){
+  if (!who || !ALL.nodes.length) return null;
+  const seeds = new Set();
+  for (const n of ALL.nodes){
+    if (n.type === 'persona' && String(n.qq) === who) seeds.add(n.id);
+    if (n.type === 'conv' && convOfPerson(String(n.raw || ''), who)) seeds.add(n.id);
+  }
+  if (CORE.admins && CORE.admins.includes(who)) seeds.add(CORE.id);
+  const set = new Set(seeds);
+  for (const l of ALL.links){
+    const s = idOf(l.source), t = idOf(l.target);
+    if (seeds.has(s) && !set.has(t)) set.add(t);
+    if (seeds.has(t) && !set.has(s)) set.add(s);
+  }
+  // 没有会话节点的零散记忆，按 speaker 兜底
+  for (const n of ALL.nodes){
+    if (n.type === 'memory' && String(n.speaker || '') === who) set.add(n.id);
+  }
+  return set;
+}
+function fillPeople(meta){
+  people = (meta && meta.people) || [];
+  const sel = document.getElementById('person');
+  const wanted = person || new URLSearchParams(location.search).get('person') || '';
+  sel.innerHTML = '<option value="">看谁：全部</option>' + people.map(p =>
+    `<option value="${esc(p.qq)}">${esc(p.label)} · ${p.memories} 记忆</option>`).join('');
+  sel.value = people.some(p => p.qq === wanted) ? wanted : '';
+  person = sel.value;
+  personIds = computePersonIds(person);
+  sel.onchange = () => applyPerson(sel.value);
+  syncFlatButton();
+}
+function applyPerson(who, refit){
+  person = who || '';
+  personIds = computePersonIds(person);
+  const sel = document.getElementById('person');
+  if (sel && sel.value !== person) sel.value = person;
+  const u = new URL(location.href);
+  if (person) u.searchParams.set('person', person); else u.searchParams.delete('person');
+  history.replaceState(null, '', u);
+  // 查看单个人时自动进入二维平铺；清空筛选回三维。
+  if (person){
+    if (GALAXY) leaveGalaxyVisual();
+    FLAT = true;
+    document.body.classList.add('flat');
+  } else {
+    FLAT = false;
+    document.body.classList.remove('flat');
+    restore3DControls();
+  }
+  syncFlatButton();
+  refresh();
+  if (FLAT) setTimeout(() => fitFlat(650), 60);
+  else if (refit !== false) setTimeout(() => fitView(650, -140), 80);
+}
+function refresh(){
+  const gd = visibleData();
+  Graph.graphData(gd);
+  Graph.nodeColor(nodeColorFor).nodeOpacity(1);
+  if (FLAT){
+    arrangeFlat();
+    _applyFlatRefs();
+    syncFlatButton();
+    updateHintStat();
+    updateGalaxyHud();
+    updateModeInfo();
+    return;
+  }
+  // 离开平铺时清掉二维固定坐标，让原来的圈层力重新接管。
+  for (const n of gd.nodes){
+    if (n.__flatFixed){
+      delete n.__flatFixed;
+      if (n.type === 'core'){
+        n.x = 0; n.y = 0; n.z = 0;
+        n.fx = 0; n.fy = 0; n.fz = 0;   // 三维里核心仍然钉在原点
+      } else {
+        delete n.fx; delete n.fy; delete n.fz;
+      }
+    }
+  }
+  if (GALAXY){
+    arrangeGalaxy(Graph.graphData().nodes);
+    _applyGalaxyRefs();
+    startPulse();
+    updateHintStat();
+    updateGalaxyHud();
+    updateModeInfo();
+    syncFlatButton();
+    return;
+  }
+  tuneForces();
+  Graph.d3ReheatSimulation();
+  updateHintStat();
+  updateGalaxyHud();
+  updateModeInfo();
+  syncFlatButton();
+}
+
+// ---------- 布局 ----------
+function ringOf(n){
+  return n.ring || (n.core_related ? 'core' : 'outer');
+}
+function seeded(g){
+  // 核心固定原点；管理员/系统在核心圈，熟识的人在中圈，陌生人在外圈星环。
+  // 这只是初始位置，下面的 coreRingForce / arrangeRings 会继续维持圈层。
+  const GOLD = Math.PI * (3 - Math.sqrt(5));
+  const core = g.nodes.find(n => n.type === 'core');
+  const coreId = core ? core.id : null;
+  const pos = new Map();
+  if (core){
+    core.x = 0; core.y = 0; core.z = 0;
+    core.fx = 0; core.fy = 0; core.fz = 0;   // 固定中心，不允许力把核心推走
+    pos.set(core.id, core);
+  }
+  const anchors = g.nodes.filter(n => n.type === 'persona' || n.type === 'conv');
+  anchors.forEach((n, i) => {
+    if (n.id === coreId) return;
+    const ring = ringOf(n);
+    const R = RING_R[ring] || RING_R.outer;
+    const t = GOLD * i;
+    if (ring === 'outer'){
+      // 陌生人单独压成外圈星环，不再铺满整个球面
+      n.x = R * Math.cos(t);
+      n.y = ((i % 5) - 2) * 2.5;
+      n.z = R * Math.sin(t);
+    } else {
+      const y = anchors.length === 1 ? 0 : 1 - (i / (anchors.length - 1)) * 2;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      n.x = R * r * Math.cos(t); n.y = R * y; n.z = R * r * Math.sin(t);
+    }
+    n.__ring = ring;
+    n.__ringJitter = (i % 7) * 7;
+    pos.set(n.id, n);
+  });
+  const parent = new Map();
+  g.links.forEach(l => {
+    const s = idOf(l.source), t = idOf(l.target);
+    if (coreId && (s === coreId || t === coreId)) return;
+    if (pos.has(t) && !parent.has(s)) parent.set(s, t);
+    else if (pos.has(s) && !parent.has(t)) parent.set(t, s);
+  });
+  g.nodes.forEach((n, i) => {
+    if (pos.has(n.id)) return;
+    const p = pos.get(parent.get(n.id));
+    const ring = ringOf(n);
+    const a = i * 2.399;
+    const rad = p ? (ring === 'core' ? 18 : ring === 'inner' ? 24 : 30)
+                  : (RING_R[ring] || RING_R.outer);
+    n.x = (p ? p.x : 0) + rad * Math.cos(a);
+    n.y = (p ? p.y : 0) + rad * Math.sin(a) * (ring === 'outer' ? 0.15 : 0.7);
+    n.z = (p ? p.z : 0) + rad * Math.sin(a);
+    if (!p && ring === 'outer'){
+      n.y = ((i % 5) - 2) * 2.5;
+    }
+    n.__ring = ring;
+    n.__ringJitter = (i % 7) * 7;
+  });
+  return g;
+}
+// ---------- 星云展示模式 ----------
+// 只影响画面：让星体在三维空间里自然散开（不是旋臂/星云平面），
+// 每个星体都能拖动；关系线隐藏，只留光点。切回操作模式会恢复三圈布局。
+// 位置不是随机数堆出来的，也不是按类型/时间一排排坐好：
+// 每个圈层内用节点 id 的稳定哈希决定围绕核心的先后次序，
+// 再沿黄金角三维螺旋铺开，所以看起来散漫、但每颗星的位置可复现。
+const GALAXY_R = {core: [150, 430], inner: [460, 640], outer: [670, 850]};
+function _galaxyHash(s){
+  let h = 2166136261;
+  for (let i = 0; i < String(s).length; i++){
+    h ^= String(s).charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function relaxGalaxy(list, lo, hi){
+  const minFor = n => 30 + (n.size || 3) * 1.5;
+  for (let pass = 0; pass < 28; pass++){
+    let moved = 0;
+    for (let i = 0; i < list.length; i++){
+      const a = list[i];
+      for (let j = i + 1; j < list.length; j++){
+        const b = list[j];
+        let dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        let d = Math.hypot(dx, dy, dz);
+        const need = (minFor(a) + minFor(b)) * 0.55;
+        if (d >= need || d < 1e-6) continue;
+        const push = (need - d) * 0.5;
+        dx /= d; dy /= d; dz /= d;
+        a.x += dx * push; a.y += dy * push; a.z += dz * push;
+        b.x -= dx * push; b.y -= dy * push; b.z -= dz * push;
+        moved++;
+      }
+    }
+    for (const n of list){
+      const r = Math.hypot(n.x, n.y, n.z);
+      if (r < 1e-6) continue;
+      const rr = Math.max(lo, Math.min(hi, r));
+      const f = rr / r;
+      n.x *= f; n.y *= f; n.z *= f;
+    }
+    if (!moved) break;
+  }
+}
+
+function arrangeGalaxy(nodes){
+  const GOLD = Math.PI * (3 - Math.sqrt(5));
+  const groups = {core: [], inner: [], outer: []};
+  nodes.forEach(n => {
+    if (n.type === 'core'){
+      n.x = 0; n.y = 0; n.z = 0;
+      delete n.fx; delete n.fy; delete n.fz;   // 核心也可拖动
+      return;
+    }
+    const ring = ringOf(n);
+    (groups[ring] || groups.outer).push(n);
+  });
+  for (const ring of ['core', 'inner', 'outer']){
+    const list = groups[ring].slice().sort((a, b) =>
+      (_galaxyHash(a.id) - _galaxyHash(b.id)) || String(a.id).localeCompare(String(b.id)));
+    const range = GALAXY_R[ring] || GALAXY_R.outer;
+    const lo = range[0], hi = range[1];
+    const n = Math.max(1, list.length);
+    list.forEach((node, i) => {
+      const h = _galaxyHash(node.id);
+      const t = (i + 0.5) / n;
+      // 半径顺着次序变大，但不做整齐的同心球：加稳定的细碎偏移。
+      const jitterR = (((h >>> 8) % 1000) / 1000 - 0.5) * (hi - lo) * 0.22;
+      const r = Math.max(lo * 0.9, Math.min(hi * 1.06, lo + (hi - lo) * t + jitterR));
+      const ty = Math.max(0, Math.min(1, (i + 0.5 + (((h >>> 18) % 100) / 100 - 0.5) * 0.35) / n));
+      const phi = Math.acos(1 - 2 * ty);
+      const theta = GOLD * i + ((h >>> 4) % 1000) / 1000 * 0.65 +
+        (ring === 'inner' ? 0.7 : ring === 'outer' ? 1.5 : 0);
+      node.x = r * Math.sin(phi) * Math.cos(theta);
+      node.y = r * Math.cos(phi);
+      node.z = r * Math.sin(phi) * Math.sin(theta);
+      delete node.fx; delete node.fy; delete node.fz;
+      node.vx = 0; node.vy = 0; node.vz = 0;
+    });
+    relaxGalaxy(list, lo, hi);
+  }
+  // 记住每颗星体本来的位置：拖动松手后回到这里，避免星云被拖乱后无法复位。
+  for (const n of nodes){
+    n.__gx = n.x; n.__gy = n.y; n.__gz = n.z;
+  }
+}
+
+function returnNodeHome(n, tx, ty, tz, pin){
+  if (!n || !isFinite(tx) || !isFinite(ty) || !isFinite(tz)) return;
+  if (Math.hypot((n.x || 0) - tx, (n.y || 0) - ty, (n.z || 0) - tz) < 0.5){
+    n.x = tx; n.y = ty; n.z = tz;
+    if (pin){ n.fx = tx; n.fy = ty; n.fz = 0; }
+    return;
+  }
+  const token = {};
+  n.__homeAnim = token;
+  const sx = n.x, sy = n.y, sz = n.z;
+  const t0 = performance.now();
+  const dur = 460;
+  const tid = () => (n.__homeAnim === token);
+  function step(now){
+    if (!tid()) return;
+    if (pin && !FLAT) return;
+    if (!pin && !GALAXY) return;
+    const t = Math.min(1, (now - t0) / dur);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    n.x = sx + (tx - sx) * e;
+    n.y = sy + (ty - sy) * e;
+    // 三维给一条轻微向上的弧线；二维保持 z=0，不离开平面。
+    n.z = sz + (tz - sz) * e + (pin ? 0 : Math.sin(Math.PI * t) * 18);
+    n.vx = 0; n.vy = 0; n.vz = 0;
+    if (pin){
+      n.fx = n.x; n.fy = n.y; n.fz = 0;
+    } else {
+      delete n.fx; delete n.fy; delete n.fz;
+    }
+    try { Graph.refresh(); } catch (e) {}
+    if (t < 1){
+      requestAnimationFrame(step);
+    } else {
+      n.x = tx; n.y = ty; n.z = tz;
+      if (pin){ n.fx = tx; n.fy = ty; n.fz = 0; }
+      n.__homeAnim = null;
+      try { Graph.refresh(); } catch (e) {}
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ---------- 单个人记忆：二维平铺 ----------
+function syncFlatButton(){
+  const b = document.getElementById('flatbtn');
+  if (b){
+    b.hidden = !person;
+    b.textContent = FLAT ? '返回三维' : '二维平铺';
+    b.classList.toggle('on', FLAT);
+  }
+  const th = document.getElementById('touchhint');
+  if (th){
+    const span = th.querySelector('span');
+    if (span) span.textContent = '单指旋转 · 双指缩放/平移 · 点球看详情';
+  }
+}
+
+function leaveGalaxyVisual(){
+  // 由二维平铺触发时只切画面，不刷新页面；保留当前 person 筛选。
+  if (!GALAXY) return;
+  GALAXY = false;
+  document.body.classList.remove('galaxy');
+  stopPulse();
+  try { Graph.backgroundColor('#0b1020'); } catch (e) {}
+  try { _applyGalaxyRefs(); } catch (e) {}
+  const btn = document.getElementById('modebtn');
+  if (btn){ btn.textContent = '星云模式'; btn.classList.remove('on'); }
+  try {
+    const c = Graph.controls();
+    if (c){ c.autoRotate = false; c.enableRotate = true; c.target.set(0, 0, 0); c.update(); }
+  } catch (e) {}
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('view', 'ops');
+    history.replaceState(null, '', u);
+  } catch (e) {}
+  updateGalaxyHud();
+}
+
+function flatOrder(n){
+  const rank = {core: 0, persona: 1, conv: 2, day: 3, summary: 4, memory: 5, msg: 6};
+  return [rank[n.type] == null ? 9 : rank[n.type],
+          String(n.label || n.text || n.nick || n.id)];
+}
+
+function arrangeFlat(){
+  const nodes = Graph.graphData().nodes;
+  if (!nodes.length){ FLAT_GRID = null; return; }
+  nodes.sort((a, b) => {
+    const x = flatOrder(a), y = flatOrder(b);
+    return (x[0] - y[0]) || x[1].localeCompare(y[1]);
+  });
+  const W = Math.max(320, window.innerWidth || 1200);
+  const H = Math.max(320, window.innerHeight || 800);
+  const aspect = W / H;
+  let cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length * aspect)));
+  // 正方形网格附近微调，避免手机竖屏拉成一条细长带。
+  let rows = Math.ceil(nodes.length / cols);
+  while (cols > 1 && rows > cols * 2.2){ cols--; rows = Math.ceil(nodes.length / cols); }
+  const gap = 54;
+  const x0 = -(cols - 1) * gap / 2;
+  const y0 = (rows - 1) * gap / 2;
+  nodes.forEach((n, i) => {
+    const c = i % cols, r = Math.floor(i / cols);
+    n.x = x0 + c * gap;
+    n.y = y0 - r * gap;
+    n.z = 0;
+    n.fx = n.x; n.fy = n.y; n.fz = 0;
+    n.vx = 0; n.vy = 0; n.vz = 0;
+    n.__flatFixed = true;
+    n.__flatX = n.x; n.__flatY = n.y; n.__flatZ = 0;
+  });
+  FLAT_GRID = {cols, rows, gap, x0, y0,
+               width: Math.max(0, (cols - 1) * gap),
+               height: Math.max(0, (rows - 1) * gap)};
+  for (const name of ['link', 'charge', 'center', 'core-ring']){
+    try { Graph.d3Force(name, null); } catch (e) {}
+  }
+  try { Graph.enableNodeDrag(true); } catch (e) {}
+  try {
+    const c = Graph.controls();
+    if (c){
+      c.autoRotate = false;
+      // 二维只是排布成平面，操作仍与三维一致：左键/单指旋转，右键/双指平移。
+      c.enableRotate = true;
+      c.enablePan = true;
+      c.enableZoom = true;
+      c.mouseButtons = {LEFT: 0, MIDDLE: 1, RIGHT: 2};
+      c.touches = {ONE: TOUCH_ROTATE, TWO: TOUCH_DOLLY_PAN};
+      c.target.set(0, 0, 0);
+      c.update();
+    }
+  } catch (e) {}
+  Graph.onNodeDrag(n => { if (n) n.__homeAnim = null; });
+  Graph.onNodeDragEnd(n => {
+    if (FLAT && n && n.__flatX != null){
+      returnNodeHome(n, n.__flatX, n.__flatY, n.__flatZ, true);
+    }
+  });
+}
+
+function fitFlat(ms){
+  if (!FLAT_GRID) return;
+  const cam = Graph.camera && Graph.camera();
+  const fov = ((cam && cam.fov) ? cam.fov : 60) * Math.PI / 180;
+  const aspect = Math.max(0.45, (window.innerWidth || 1200) / (window.innerHeight || 800));
+  const halfW = FLAT_GRID.width / 2 + 42;
+  const halfH = FLAT_GRID.height / 2 + 42;
+  const dist = Math.max(halfH / Math.tan(fov / 2),
+                        halfW / (Math.tan(fov / 2) * aspect)) * 1.18;
+  Graph.cameraPosition({x: 0, y: 0, z: dist}, {x: 0, y: 0, z: 0}, ms || 600);
+}
+
+function restore3DControls(){
+  try {
+    const c = Graph.controls();
+    if (c){
+      c.enableRotate = true;
+      c.enablePan = true;
+      c.mouseButtons = {LEFT: 0, MIDDLE: 1, RIGHT: 2};
+      c.touches = {ONE: TOUCH_ROTATE, TWO: TOUCH_DOLLY_PAN};
+    }
+  } catch (e) {}
+}
+
+function _applyFlatRefs(){
+  Graph.nodeVal(nodeVal)
+       .nodeResolution(IS_MOBILE ? 16 : 32)
+       .nodeColor(nodeColorFor)
+       .linkOpacity(0.52)
+       .linkColor(baseLinkColor)
+       .linkWidth(l => Math.min(1.6, baseLinkWidth(l)))
+       .linkDirectionalParticles(0)
+       .linkDirectionalParticleWidth(0);
+}
+
+function setFlat(on, opts){
+  opts = opts || {};
+  if (on && !person) on = false;
+  if (on && GALAXY) leaveGalaxyVisual();
+  const changed = (on !== FLAT);
+  FLAT = on;
+  document.body.classList.toggle('flat', FLAT);
+  syncFlatButton();
+  if (!changed && !opts.force){ if (FLAT) fitFlat(450); return; }
+  refresh();
+  if (FLAT){
+    setTimeout(() => fitFlat(600), 40);
+    if (!opts.silent) toast('二维平铺');
+  } else {
+    restore3DControls();
+    if (person) setTimeout(() => fitView(650, -120), 80);
+    if (!opts.silent) toast('三维模式');
+  }
+}
+
+function setGalaxy(on){
+  if (on === GALAXY) return;
+  if (on && FLAT){
+    FLAT = false;
+    document.body.classList.remove('flat');
+    syncFlatButton();
+    restore3DControls();
+  }
+  GALAXY = on;
+  document.body.classList.toggle('galaxy', GALAXY);
+  try {
+    const u = new URL(location.href);
+    if (GALAXY) u.searchParams.set('view', 'nebula'); else u.searchParams.set('view', 'ops');
+    history.replaceState(null, '', u);
+  } catch (e) { /* 忽略 */ }
+  const btn = document.getElementById('modebtn');
+  if (btn){ btn.textContent = GALAXY ? '返回操作' : '星云模式'; btn.classList.toggle('on', GALAXY); }
+  hideDetail(); clearSelection(); hoverOff = true; focusOn(null); hoverOff = false;
+  _applyGalaxyRefs();
+  if (GALAXY){
+    // 让 WebGL 画布透明，后面的 #pulse 发光点才能透出来；
+    // 纯黑由 body.galaxy 提供。
+    Graph.backgroundColor('rgba(0,0,0,0)');
+    Graph.graphData(visibleData());
+    arrangeGalaxy(Graph.graphData().nodes);
+    startPulse();
+    try {
+      // 星体由上面的散布坐标决定；去掉力导向，避免它们自己又挤回中心。
+      // 去掉力不等于锁死：节点仍可被拖动，松手后沿轨迹回到星云原位。
+      Graph.d3Force('link', null);
+      Graph.d3Force('charge', null);
+      Graph.d3Force('center', null);
+      Graph.enableNodeDrag(true);
+      Graph.enableNavigationControls(true);
+      Graph.onNodeDrag(n => {
+        if (n) n.__homeAnim = null;
+        try { Graph.controls().autoRotate = false; } catch (e) {}
+      });
+      Graph.onNodeDragEnd(n => {
+        if (GALAXY){
+          try { Graph.controls().autoRotate = true; } catch (e) {}
+          if (n && n.__gx != null) returnNodeHome(n, n.__gx, n.__gy, n.__gz, false);
+        } else if (FLAT){
+          if (n && n.__flatX != null) returnNodeHome(n, n.__flatX, n.__flatY, n.__flatZ, true);
+        }
+      });
+      const c = Graph.controls();
+      if (c){
+        c.autoRotate = true;   // 镜头绕核心缓转，星体在空间中散布
+        c.autoRotateSpeed = IS_MOBILE ? 0.22 : 0.42;
+        // 双指缩放/平移都要能用；单指仍只旋转。
+        c.enablePan = true;
+        c.touches = { ONE: TOUCH_ROTATE, TWO: TOUCH_DOLLY_PAN };
+      }
+    } catch (e) { /* 老库没有这些接口就只保留粒子 */ }
+    Graph.cameraPosition({x: 0, y: 260, z: 980}, {x: 0, y: 0, z: 0}, 900);
+    setTimeout(() => fitView(900, -80), 420);
+    toast('星云模式');
+  } else {
+    stopPulse();
+    try {
+      const c = Graph.controls();
+      if (c){
+        c.autoRotate = false;
+        c.enablePan = true;
+        c.target.set(0, 0, 0);
+        c.update();
+      }
+    } catch (e) { /* 忽略 */ }
+    // 星云模式把所有节点锁成了星体坐标；回到操作模式时重新载入一次页面最干净，
+    // 还能保留当前筛选/搜索参数（view=galaxy 已从 URL 去掉）。
+    location.reload();
+    return;
+  }
+  updateHintStat();
+  updateGalaxyHud();
+  updateModeInfo();
+}
+function _applyGalaxyRefs(){
+  Graph.nodeVal(nodeVal)
+       .nodeResolution(GALAXY ? (IS_MOBILE ? 20 : 48) : (IS_MOBILE ? 16 : 32))
+       .nodeColor(nodeColorFor)
+       // 星云模式不再用库里的球形粒子；连线提亮保留，光点由上层 #pulse 画布绘制。
+       .linkOpacity(GALAXY ? 0.48 : 0.92)
+       .linkColor(linkColorFor)
+       .linkWidth(baseLinkWidth)
+       .linkDirectionalParticles(particleCount)
+       .linkDirectionalParticleColor(particleColor)
+       .linkDirectionalParticleSpeed(particleSpeed)
+       .linkDirectionalParticleResolution(12)
+       .linkDirectionalParticleWidth(l => GALAXY ? (l.kind === 'orbit' ? 8.0 : 6.0) : 2.2);
+}
+document.getElementById('modebtn').onclick = () => {
+  try { setGalaxy(!GALAXY); }
+  catch (e) { toast('切换模式失败：' + e.message, true); console.error(e); }
+};
+const _flatbtn = document.getElementById('flatbtn');
+if (_flatbtn) _flatbtn.onclick = () => {
+  try { setFlat(!FLAT); }
+  catch (e) { toast('切换平铺失败：' + e.message, true); console.error(e); }
+};
+
+let ringNodes = [];
+function coreRingForce(alpha){
+  // 软约束：核心圈、熟识中圈、陌生外圈各就各位；核心自身固定。
+  for (const n of ringNodes){
+    if (n.type === 'core' || n.fx != null || n.fy != null || n.fz != null) continue;
+    if (n.type !== 'persona' && n.type !== 'conv' && n.type !== 'memory') continue;
+    const ring = ringOf(n);
+    const target = (RING_R[ring] || RING_R.outer) + (n.__ringJitter || 0);
+    const r = Math.hypot(n.x || 0, n.y || 0, n.z || 0);
+    if (r < 1e-4) continue;
+    const pull = ring === 'core' ? 0.11 : ring === 'inner' ? 0.085 : 0.07;
+    const scale = (target / r - 1) * alpha * pull;
+    n.vx += (n.x || 0) * scale;
+    n.vy += (n.y || 0) * scale;
+    n.vz += (n.z || 0) * scale;
+  }
+}
+coreRingForce.initialize = nodes => { ringNodes = nodes || []; };
+
+function arrangeRings(){
+  // 自定义力在部分 3d-force-graph 版本里不会持久生效，收尾时再做一次确定性的圈层投影，
+  // 保证“核心在内、熟识在中、陌生在外”不依赖浏览器/库版本。
+  const nodes = Graph.graphData().nodes;
+  for (const n of nodes){
+    if (n.type === 'core' || n.fx != null || n.fy != null || n.fz != null) continue;
+    if (n.type !== 'persona' && n.type !== 'conv' && n.type !== 'memory') continue;
+    const ring = ringOf(n);
+    const target = (RING_R[ring] || RING_R.outer) + (n.__ringJitter || 0);
+    const r = Math.hypot(n.x || 0, n.y || 0, n.z || 0);
+    if (r < 1e-4) continue;
+    const k = target / r;
+    n.x = (n.x || 0) * k;
+    n.y = (n.y || 0) * k;
+    n.z = (n.z || 0) * k;
+    n.vx = 0; n.vy = 0; n.vz = 0;
+  }
+}
+
+function tuneForces(){
+  const charge = Graph.d3Force('charge');
+  if (charge && typeof charge.strength === 'function') charge.strength(-34);
+  try { Graph.d3Force('core-ring', coreRingForce); } catch (e) { /* 老库不支持自定义力就只保留初始圈层 */ }
+  const ind = Number(new URLSearchParams(location.search).get('ind')) || 60;
+  const link = Graph.d3Force('link');
+  if (link && typeof link.distance === 'function') {
+    link.distance(l => (l.kind === 'in' ? ind : l.kind === 'about' ? ind * 0.9 : 60));
+    // d3 的力只在 initialize 时读取 distance，改完必须重新初始化，否则不生效
+    try { link.initialize(Graph.graphData().nodes); } catch (e) { /* 忽略 */ }
+  }
+}
+function ringStat(){
+  const all = Graph.graphData().nodes;
+  const core = all.find(n => n.type === 'core');
+  const nodes = all.filter(n =>
+    n.type === 'persona' || n.type === 'conv' || n.type === 'memory');
+  const avg = list => list.length
+    ? (list.reduce((s, n) => s + Math.hypot(n.x || 0, n.y || 0, n.z || 0), 0) / list.length).toFixed(0)
+    : '—';
+  const coreRing = nodes.filter(n => ringOf(n) === 'core');
+  const inner = nodes.filter(n => ringOf(n) === 'inner');
+  const outer = nodes.filter(n => ringOf(n) === 'outer');
+  const cr = core ? Math.hypot(core.x || 0, core.y || 0, core.z || 0).toFixed(0) : '—';
+  return `中心 ${cr} · 核心圈 ${coreRing.length}/${avg(coreRing)}`
+       + ` · 熟识 ${inner.length}/${avg(inner)} · 陌生 ${outer.length}/${avg(outer)}`;
+}
+function layoutStat(){
+  const nodes = Graph.graphData().nodes;
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  let sum = 0, cnt = 0;
+  ALL.links.forEach(l => {
+    if (l.kind !== 'in' && l.kind !== 'about') return;
+    const s = byId.get(idOf(l.source)), t = byId.get(idOf(l.target));
+    if (!s || !t || s.x == null || t.x == null) return;
+    sum += Math.hypot(s.x - t.x, s.y - t.y, s.z - t.z); cnt++;
+  });
+  const ring = new URLSearchParams(location.search).get('ringdebug') === '1'
+    ? ' · ' + ringStat() : '';
+  if (!cnt) return `${nodes.length} 球${ring}`;
+  return `${nodes.length} 球 · 平均离会话 ${(sum / cnt).toFixed(1)} 单位${ring}`;
+}
+function updateGalaxyHud(){
+  const el = document.getElementById('galaxyhud');
+  if (!el) return;
+  if (!GALAXY){ el.hidden = true; return; }
+  el.hidden = false;
+  const visible = Graph.graphData().nodes;
+  const c = {};
+  for (const n of visible) c[n.type] = (c[n.type] || 0) + 1;
+  const names = [['core','核心'],['persona','人格'],['conv','会话'],['day','日期'],
+                 ['msg','消息'],['summary','摘要'],['memory','记忆']];
+  const parts = names.filter(([k]) => c[k]).map(([k, label]) =>
+    `<span class="k">${label}</span> ${c[k]}`).join(' · ');
+  const s = (ALL.meta && ALL.meta.sources) || {};
+  const tier = (!person && s['核心相关'] != null)
+    ? `<div class="tier">核心记忆 ${s['核心相关']} · 熟识记忆 ${s['熟识记忆']} · 陌生记忆 ${s['陌生记忆']}</div>`
+    : '';
+  el.innerHTML = `<div><b>${visible.length}</b> 球 · ${parts}</div>${tier}` +
+    (MOOD_TEXT ? `<div class="muted" id="moodline">${MOOD_TEXT}</div>` : '') +
+    `<div class="muted">拖动星体会沿轨迹回弹 · 滚轮缩放 · G 或「返回操作」回到三圈</div>`;
+}
+
+// 模式数据单独放在这个面板里；底部 toast 只负责报模式名，不再塞操作说明。
+function updateModeInfo(){
+  const el = document.getElementById('modeinfo');
+  if (!el) return;
+  if (!GALAXY && !FLAT){
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+  const visible = Graph.graphData().nodes || [];
+  const c = {};
+  for (const n of visible) c[n.type] = (c[n.type] || 0) + 1;
+  const names = [['core','核心'],['persona','人格'],['conv','会话'],['day','日期'],
+                 ['msg','消息'],['summary','摘要'],['memory','记忆']];
+  const parts = names.filter(([k]) => c[k]).map(([k, label]) =>
+    `<span class="k">${label}</span> ${c[k]}`).join(' · ');
+  const p = people.find(x => x.qq === person);
+  const who = person ? (p ? p.label : person) : '全部';
+  const s = (ALL.meta && ALL.meta.sources) || {};
+  const tier = (!person && s['核心相关'] != null)
+    ? `<div class="mi-tier">核心记忆 ${s['核心相关']} · 熟识记忆 ${s['熟识记忆']} · 陌生记忆 ${s['陌生记忆']}</div>`
+    : '';
+  const mode = FLAT ? '二维平铺' : '星云模式';
+  const tip = FLAT
+    ? (IS_MOBILE
+        ? '单指旋转 · 双指缩放/平移 · 点球看详情 · 拖动球松手回网格'
+        : '左键拖动旋转 · 右键拖动平移 · 滚轮缩放 · 点球看详情 · 拖动球松手回网格')
+    : (IS_MOBILE
+        ? '单指旋转 · 双指缩放/平移 · 拖动星体松手回弹'
+        : '左键拖动旋转 · 右键拖动平移 · 滚轮缩放 · 拖动星体松手回弹');
+  el.innerHTML = `<div class="mi-top"><span class="mi-mode">${mode}</span>`
+    + `<span class="mi-count">${visible.length} 球</span></div>`
+    + `<div class="mi-row">${parts}</div>`
+    + `<div class="mi-row">看谁：${esc(who)}</div>${tier}`
+    + (MOOD_TEXT ? `<div class="mi-row">${MOOD_TEXT}</div>` : '')
+    + `<div class="mi-tip">${tip}</div>`;
+}
+
+function updateHintStat(){
+  const hintEl = document.getElementById('hint');
+  if (!hintEl) return;
+  const pre = batchMode ? '多选模式 · 点记忆球加入选择 · ' : '';
+  if (FLAT){
+    const p = people.find(x => x.qq === person);
+    hintEl.textContent = pre + (p ? '只看 ' + p.label : '单个人') +
+      ' · 二维平铺 · ' + (IS_MOBILE ? '单指旋转 · 双指缩放/平移' : '拖动旋转 · 右键平移 · 滚轮缩放') + ' · 点球看详情';
+    return;
+  }
+  if (hiddenTypes.size || hiddenKinds.size || search || range || person){
+    const bits = [];
+    if (person){
+      const p = people.find(x => x.qq === person);
+      bits.push('只看 ' + (p ? p.label : person));
+    }
+    if (search) bits.push(`搜索「${search}」`);
+    if (range) bits.push('时间已筛');
+    if (hiddenTypes.size) bits.push('隐藏 ' + hiddenTypes.size + ' 类');
+    if (hiddenKinds.size) bits.push('隐藏 ' + hiddenKinds.size + ' 标签');
+    hintEl.textContent = pre + bits.join(' · ') + '　|　' + layoutStat();
+    return;
+  }
+  hintEl.textContent = pre + '左键拖拽旋转 · 右键平移 · 滚轮或 ＋/− 缩放 · 回中心　|　' + layoutStat();
+}
+Graph.onEngineStop(() => { if (!GALAXY && !FLAT) arrangeRings(); updateHintStat(); });   // 不自动改镜头：用户自己移动过就别抢
+if (typeof Graph.onEngineTick === 'function'){
+  Graph.onEngineTick(() => { if (!GALAXY && !FLAT) arrangeRings(); });   // 每帧锁定圈层，避免同步/筛选后又散开
+}
+
+function fitView(ms, pad){
+  if (FLAT){ fitFlat(ms || 650); return; }
+  if (typeof Graph.zoomToFit !== 'function') return;
+  try { Graph.zoomToFit(ms || 700, pad == null ? -120 : pad); } catch (e) { /* 老版本没有就跳过 */ }
+}
+window.addEventListener('resize', () => { if (!userMovedCam) fitView(300); });
+
+// ---------- 镜头：关掉绕圈旋转，只保留平移/前后（库自带 OrbitControls） ----------
+let userMovedCam = false;
+function setupCamera(){
+  try {
+    const ctl = Graph.controls();
+    if (!ctl) return;
+    ctl.enableRotate = true;         // 左键拖拽 = 绕圈旋转（三维转，不是平移）
+    ctl.enablePan = true;            // 右键拖拽 = 平移
+    ctl.screenSpacePanning = true;
+    ctl.enableZoom = true;
+    ctl.enableDamping = true;
+    ctl.dampingFactor = 0.08;
+    ctl.rotateSpeed = 0.85;
+    ctl.zoomSpeed = 0.9;
+    // LEFT=0 旋转 / MIDDLE=1 推拉 / RIGHT=2 平移
+    ctl.mouseButtons = { LEFT: 0, MIDDLE: 1, RIGHT: 2 };
+    // 单指旋转；双指必须用 DOLLY_PAN(2)，否则只能平移、不能捏合缩放。
+    ctl.touches = { ONE: TOUCH_ROTATE, TWO: TOUCH_DOLLY_PAN };
+  } catch (e) { /* 没有 controls 就算了 */ }
+}
+setupCamera();
+
+function goHome(){ fitView(700); }
+document.getElementById('home').onclick = goHome;
+
+// 放大 / 缩小：沿当前视线前后推，不改变朝向
+function dolly(f){
+  const cam = Graph.camera();
+  let ctl = null;
+  try { ctl = Graph.controls(); } catch (e) {}
+  if (!ctl || !ctl.target) return;
+  const t = ctl.target;
+  let dx = cam.position.x - t.x, dy = cam.position.y - t.y, dz = cam.position.z - t.z;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  const nl = Math.max(40, Math.min(4000, len * f));
+  cam.position.set(t.x + dx / len * nl, t.y + dy / len * nl, t.z + dz / len * nl);
+  ctl.update();
+  userMovedCam = true;
+}
+document.getElementById('zin').onclick = () => dolly(0.8);
+document.getElementById('zout').onclick = () => dolly(1.25);
+// 手机端常驻在右下角的 ＋/−（不依赖顶部抽屉）
+const mzin = document.getElementById('mzin');
+const mzout = document.getElementById('mzout');
+if (mzin) mzin.onclick = () => dolly(0.8);
+if (mzout) mzout.onclick = () => dolly(1.25);
+window.addEventListener('keydown', e => {
+  const k = (e.key || '').toLowerCase();
+  if (k === 'home' || k === '0') goHome();
+  if (k === 'g') setGalaxy(!GALAXY);
+});
+window.addEventListener('pointerdown', () => { userMovedCam = true; }, {passive: true});
+window.addEventListener('wheel', () => { userMovedCam = true; }, {passive: true});
+
+// ---------- 悬停 ----------
+function focusOn(id){
+  if (GALAXY) return;
+  if (!id){
+    hoverSet = null;
+    Graph.nodeColor(nodeColorFor).linkColor(baseLinkColor).linkWidth(baseLinkWidth);
+    return;
+  }
+  const nb = new Set([id]);
+  ALL.links.forEach(l => {
+    const s = idOf(l.source), t = idOf(l.target);
+    if (s === id) nb.add(t); else if (t === id) nb.add(s);
+  });
+  hoverSet = nb;
+  Graph.nodeColor(nodeColorFor)
+       .linkColor(l => (idOf(l.source) === id || idOf(l.target) === id)
+            ? 'rgba(130,225,255,.8)' : 'rgba(90,110,150,.05)')
+       .linkWidth(l => (idOf(l.source) === id || idOf(l.target) === id) ? 1.5 : 0.25);
+}
+Graph.onNodeHover(n => {
+  if (hoverOff || GALAXY) return;
+  const id = n ? n.id : null;
+  if (id === hoverId) return;
+  hoverId = id;
+  focusOn(id);
+});
+
+// ---------- 选择 / 详情 ----------
+function toggleSelect(n){
+  if (selected.has(n.id)) selected.delete(n.id); else selected.add(n.id);
+  syncBar(); Graph.nodeColor(nodeColorFor);
+}
+function clearSelection(){
+  selected.clear(); syncBar(); Graph.nodeColor(nodeColorFor);
+}
+function syncBar(){
+  const bar = document.getElementById('bar');
+  const show = batchMode || selected.size > 0;
+  bar.style.display = show ? 'flex' : 'none';
+  bar.classList.toggle('show', show);
+  document.getElementById('barcount').textContent = `已选 ${selected.size} 条`;
+  const pinBtn = bar.querySelector('[data-bulk="pin"]');
+  if (pinBtn){
+    const chosen = [...selected].map(id => ALL.nodes.find(n => n.id === id)).filter(Boolean);
+    pinBtn.textContent = chosen.length && chosen.every(n => n.pinned) ? '取消永久' : '永久';
+  }
+}
+function flyTo(n){
+  if (FLAT){
+    // 二维平铺是总览：点记忆只展开详情，不把网格镜头带走。
+    return;
+  }
+  const d = 95;
+  Graph.cameraPosition({x: n.x + d, y: n.y + d * 0.45, z: n.z + d},
+    {x: n.x, y: n.y, z: n.z}, 900);
+}
+Graph.onNodeClick(n => {
+  if (GALAXY){ toast('星云模式只展示；点「返回操作」再查看和编辑'); return; }
+  if (!batchMode){ showDetail(n); flyTo(n); return; }
+  // 多选只对记忆球生效（其他球没有可批量改的字段），点错了给一句提示
+  if (memRefOf(n.id)){
+    if (n.mine === false){ toast('这是别人的记忆，只能看概况，不能选中修改', true); return; }
+    toggleSelect(n); return;
+  }
+  toast('多选只能选橙色的记忆球');
+});
+
+function detailRows(n){
+  const rows = [];
+  if (n.nick) rows.push(['昵称', n.nick]);
+  if (n.qq) rows.push(['QQ（凭证）', n.qq]);
+  if (n.admins && n.admins.length) rows.push(['核心管理员', n.admins.join('、')]);
+  if (n.known_labels && n.known_labels.length) rows.push(['熟识的人', n.known_labels.join('、')]);
+  if (n.core_reason) rows.push(['核心判定', n.core_reason]);
+  if (n.ring) rows.push(['关系圈层', n.ring_label || RING_LABEL[n.ring] || n.ring]);
+  if (n.override) rows.push(['关系来源', n.override === 'auto' ? '自动判定' : '手动指定']);
+  if (n.backend) rows.push(['生成后端', n.backend]);
+  if (n.speaker) rows.push(['说话人', n.speaker]);
+  if (n.kind) rows.push(['标签', n.kind]);
+  if (n.status) rows.push(['状态', n.status]);
+  if (n.pinned) rows.push(['永久', '是 · 不会被忘掉']);
+  if (n.source) rows.push(['记忆库', n.source]);
+  if (n.origin) rows.push(['来源', n.origin]);
+  if (n.importance != null) rows.push(['重要度', Number(n.importance).toFixed(2)]);
+  if (n.strength != null) rows.push(['当前强度', Number(n.strength).toFixed(2)]);
+  if (n.confidence != null) rows.push(['可信度', Number(n.confidence).toFixed(2)]);
+  if (n.access != null) rows.push(['想起过', n.access + ' 次']);
+  if (n.created) rows.push(['记住于', fmtTime(n.created)]);
+  if (n.updated) rows.push(['更新于', fmtTime(n.updated)]);
+  if (n.superseded_by) rows.push(['被替代', '#' + n.superseded_by]);
+  if (n.date) rows.push(['日期', n.date]);
+  if (n.role) rows.push(['来自', n.role === 'user' ? '他' : '我']);
+  if (n.days != null) rows.push(['有摘要', n.days + ' 天']);
+  if (n.msgs != null) rows.push(['消息', n.msgs + ' 条']);
+  return rows;
+}
+
+function showDetail(n, opts){
+  opts = opts || {};
+  const box = document.getElementById('detail');
+  const type = (TYPES[n.type] || {}).label || n.type || '';
+  const ref = memRefOf(n.id);
+  const isMem = !!ref;
+  const redacted = !!n.redacted;
+  const canRel = !redacted && !READONLY && (!ACCOUNTS || (ME && ME.admin))
+    && n.type === 'persona' && n.qq && !n.admin;
+  const rel = n.override || 'auto';
+  const keepPos = box.scrollTop;
+  box.innerHTML = `<div class="dhead"><h2>${esc(n.label || n.id)}</h2>
+    <button class="btn dclose" id="dclose">关闭</button></div>
+    <div class="sub">${esc(type)}${n.pinned ? ' · ★ 永久' : ''}${redacted ? ' · 仅概况' : ''}</div>`
+    + (redacted ? '' : detailRows(n).map(([k, v]) =>
+      `<div class="kv"><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join(''))
+    + (redacted
+        ? `<div class="body" style="color:#8a96ad">${GUEST
+          ? '未登录：这里只能看球体概况，登录后才能查看自己的具体消息。'
+          : '这是别人的数据，只能看概况，具体内容不展示。'}</div>`
+        : (n.text ? `<div class="body">${esc(n.text)}</div>` : ''))
+    + (canRel ? `<div class="acts relacts">
+        <button class="act relact ${rel === 'inner' ? 'on' : ''}" data-rel="inner">设为熟识</button>
+        <button class="act relact ${rel === 'outer' ? 'on' : ''}" data-rel="outer">设为陌生</button>
+        <button class="act relact ${rel === 'auto' ? 'on' : ''}" data-rel="auto">恢复自动</button>
+      </div>
+      <div class="relhint">手动关系会写进 config.json 的 known_users / stranger_users；管理员固定核心，不能移动。</div>` : '')
+    + (!redacted && isMem ? `<textarea id="editbox" placeholder="改一下这条记忆（留空则不保存）"></textarea>
+      <div class="acts">
+        <button class="act" data-op="edit">保存修改</button>
+        <button class="act" data-op="important">更重要</button>
+        <button class="act" data-op="less">更不重要</button>
+      </div>
+      <div class="acts">
+        <button class="act" data-op="${n.pinned ? 'unpin' : 'pin'}">${n.pinned ? '取消永久' : '永久记住'}</button>
+        <button class="act" data-op="forget">忘掉</button>
+        <button class="act" data-op="restore">恢复</button>
+        <button class="act danger" data-op="delete">删除</button>
+      </div>
+      <div class="msg" id="dmsg"></div>` : '');
+  box.classList.add('show');
+  if (opts.keepScroll) box.scrollTop = keepPos;
+  const dc = box.querySelector('#dclose');
+  if (dc) dc.onclick = hideDetail;
+  const ta = box.querySelector('#editbox');
+  if (ta){ ta.value = n.text || ''; if (READONLY) ta.readOnly = true; }
+  if (opts.msg) setDetailMsg(opts.msg, opts.bad);
+  box.querySelectorAll('.act').forEach(b => {
+    b.onclick = () => {
+      const op = b.dataset.op;
+      const text = ta ? ta.value : '';
+      if (op === 'edit' && (!text.trim() || text.trim() === (n.text || '').trim())) {
+        setDetailMsg('内容没变化', true); return;
+      }
+      if (!ref) return;
+      postAction({items: [{store: ref.store, id: ref.id}], op, text}, b);
+    };
+  });
+  box.querySelectorAll('.relact').forEach(b => {
+    b.onclick = () => setRelation(n.qq, b.dataset.rel, b);
+  });
+}
+
+async function setRelation(qq, ring, btn){
+  if (READONLY){ toast('只读模式：这里只能看', true); return; }
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/relation', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+      body: JSON.stringify({qq, ring})
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '修改关系失败');
+    await load(false);
+    const nn = ALL.nodes.find(n => n.id === 'persona:' + qq);
+    if (nn) showDetail(nn, {msg: `已改为${RING_LABEL[ring] || '自动'}；同步 ${j.nodes || ''} 个节点`});
+    toast(`已改为${RING_LABEL[ring] || '自动判定'}`);
+  } catch (e) {
+    setDetailMsg('失败：' + e.message, true);
+    toast('失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function setDetailMsg(msg, bad){
+  const el = document.getElementById('dmsg');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = bad ? '#ff9aa6' : '#7fe0b0';
+}
+function hideDetail(){ document.getElementById('detail').classList.remove('show'); }
+
+const OP_TEXT = {
+  important: '已调高重要度',
+  less: '已调低重要度',
+  forget: '已设为忘掉（不再召回）',
+  restore: '已恢复',
+  edit: '内容已保存',
+  delete: '已删除',
+  merge: '已合并',
+  pin: '已设为永久（不会再被忘掉）',
+  unpin: '已取消永久'
+};
+
+let toastTimer = 0;
+function toast(msg, bad, ms){
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.borderColor = bad ? 'rgba(255,90,110,.55)' : 'rgba(77,163,255,.45)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms || 1800);
+}
+
+async function postAction(payload, btn){
+  if (READONLY){ toast('只读模式：这里只能看', true); return; }
+  if (payload.op === 'delete' &&
+      !confirm(`删除${payload.items && payload.items.length > 1 ? '选中的 ' + payload.items.length + ' 条' : '这条'}记忆？删了就找不回来了。`)) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/memory', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '操作失败');
+    // 只更新数据，不整页重排：球不跳、面板不闪
+    await load(true);
+    const label = OP_TEXT[payload.op] || '已更新';
+    const items = payload.items || [];
+    if (items.length !== 1 || payload.op === 'delete' || payload.op === 'merge'){
+      hideDetail();
+      clearSelection();
+      toast(label);
+    } else {
+      const node = ALL.nodes.find(n => n.id === memNodeId(items[0]));
+      if (node){
+        showDetail(node, {keepScroll: true, msg: label});
+      } else {
+        hideDetail();
+        toast(label);
+      }
+    }
+  } catch (e) {
+    setDetailMsg('失败：' + e.message, true);
+    toast('失败：' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function selectAllVisible(){
+  const nodes = Graph.graphData().nodes.filter(n => memRefOf(n.id) && n.mine !== false);
+  if (!nodes.length){ toast('当前没有可操作的记忆球', true); return; }
+  nodes.forEach(n => selected.add(n.id));
+  syncBar(); Graph.nodeColor(nodeColorFor); updateHintStat();
+  toast(`已选 ${nodes.length} 条自己的记忆`);
+}
+
+document.getElementById('bar').addEventListener('click', async e => {
+  const op = e.target.dataset && e.target.dataset.bulk;
+  if (!op) return;
+  if (op === 'clear'){ clearSelection(); if (batchMode) toggleBatch(); return; }
+  if (op === 'all'){ selectAllVisible(); return; }
+  if (op === 'pin'){
+    const chosen = [...selected].map(id => ALL.nodes.find(n => n.id === id)).filter(Boolean);
+    const itemsPin = [...selected].map(memRefOf).filter(Boolean);
+    if (!itemsPin.length){ toast('还没选记忆球（橙色的那些）', true); return; }
+    const allPinned = chosen.length && chosen.every(n => n.pinned);
+    await postAction({items: itemsPin, op: allPinned ? 'unpin' : 'pin'});
+    return;
+  }
+  const items = [...selected].map(memRefOf).filter(Boolean);
+  if (!items.length){ toast('还没选记忆球（橙色的那些）', true); return; }
+  const stores = new Set(items.map(it => it.store));
+  if (op === 'merge'){
+    if (items.length < 2){ alert('合并至少要选两条'); return; }
+    if (stores.size > 1){ alert('合并只能在同一个记忆库里进行（共用记忆 / 本地伴生分开选）'); return; }
+  }
+  if (op === 'delete' || op === 'forget'){
+    const what = op === 'delete' ? '删除' : '忘掉';
+    if (!confirm(`确定对 ${items.length} 条执行「${what}」？` +
+                 (stores.has('s') ? '\n\n共用记忆会同步给下游，删掉就找不回来了。' : ''))) return;
+  }
+  await postAction({items, op});
+});
+
+function toggleBatch(){
+  if (READONLY){ toast('只读模式：这里只能看', true); return; }
+  batchMode = !batchMode;
+  document.body.classList.toggle('batch', batchMode);
+  if (batchMode) document.body.classList.remove('filters');
+  const bb = document.getElementById('batchbtn');
+  if (bb) bb.classList.toggle('on', batchMode);
+  if (!batchMode) clearSelection(); else syncBar();
+  updateHintStat();
+}
+
+// ---------- 图例 / 标签 / 时间轴 ----------
+function renderLegend(meta){
+  const box = document.getElementById('legend');
+  const counts = meta.counts || {};
+  kinds = [...new Set(ALL.nodes.filter(n => n.type === 'memory').map(n => n.kind || 'fact'))];
+  const typeRows = Object.entries(TYPES).map(([k, v]) =>
+    `<div class="row on" data-type="${k}">`
+    + `<span class="dot" style="background:${v.color}"></span>`
+    + `<span>${esc(v.label)}</span><span class="n">${counts[k] || 0}</span></div>`).join('');
+  const kindRows = kinds.length ? `<div class="sep"></div>` + kinds.map(k =>
+    `<div class="row on" data-kind="${esc(k)}">`
+    + `<span class="dot" style="background:rgba(255,184,77,.12);box-shadow:inset 0 0 0 2px #ffb84d"></span>`
+    + `<span>${esc(k)}</span></div>`).join('') : '';
+  box.innerHTML = typeRows + kindRows
+    + `<div class="sep"></div>`
+    + `<div class="grad"></div>`
+    + `<div class="gradlab"><span>快忘了</span><span>记得牢</span></div>`
+    + `<div class="hintline">球越灰 = 遗忘越多 · 球越大 = 越重要<br>金色 = 系统×管理员核心 · 中圈=熟识 · 外圈星环=陌生<br>紫红 = 永久记忆 · 橙线=被替代 · 青线=语义近 · 蓝线=消息→会话</div>`;
+  box.querySelectorAll('[data-type]').forEach(row => {
+    row.onclick = () => {
+      const t = row.dataset.type;
+      if (hiddenTypes.has(t)) hiddenTypes.delete(t); else hiddenTypes.add(t);
+      row.classList.toggle('on', !hiddenTypes.has(t));
+      refresh();
+    };
+  });
+  box.querySelectorAll('[data-kind]').forEach(row => {
+    row.onclick = () => {
+      const k = row.dataset.kind;
+      if (hiddenKinds.has(k)) hiddenKinds.delete(k); else hiddenKinds.add(k);
+      row.classList.toggle('on', !hiddenKinds.has(k));
+      refresh();
+    };
+  });
+}
+
+function renderStats(meta){
+  const s = meta.sources || {};
+  const mem = s['记忆'] || 0;
+  const shared = s['共用记忆'] || 0;
+  const local = s['本地记忆'] || 0;
+  const split = mem > 0 && (shared || local) ? `（共用 ${shared} · 本地 ${local}）` : '';
+  document.getElementById('stats').innerHTML =
+    `会话 <b>${s['会话']||0}</b> · 消息 <b>${s['消息']||0}</b> · `
+    + `摘要 <b>${s['摘要天']||0}</b> · 人格 <b>${s['人格']||0}</b> · `
+    + `核心记忆 <b>${s['核心相关']||0}</b> · `
+    + `熟识 <b>${s['熟识记忆']||0}</b> · 陌生 <b>${s['陌生记忆']||0}</b> · `
+    + `记忆 <b>${mem}</b>${split} · 语义边 <b>${s['语义边']||0}</b>`;
+}
+
+// 时间轴
+const tb = document.getElementById('timebox');
+const tfrom = document.getElementById('tfrom');
+const tto = document.getElementById('tto');
+document.getElementById('timebtn').onclick = () => {
+  // 星云模式会隐藏时间轴面板；先回到普通三维，再打开，避免按钮“没反应”。
+  if (GALAXY) { leaveGalaxyVisual(); refresh(); }
+  tb.classList.toggle('show');
+  if (tb.classList.contains('show')) initRange();
+};
+function timeBounds(){
+  const ts = ALL.nodes.map(nodeTime).filter(t => t != null);
+  return ts.length ? [Math.min(...ts), Math.max(...ts)] : [0, 1];
+}
+function initRange(){
+  const [a, b] = timeBounds();
+  tfrom.value = 0; tto.value = 100;
+  document.getElementById('tlabel').textContent = `${fmtTime(a).slice(0,10)} ~ ${fmtTime(b).slice(0,10)}`;
+}
+function applyRange(){
+  const [a, b] = timeBounds();
+  const lo = a + (b - a) * (Number(tfrom.value) / 100);
+  const hi = a + (b - a) * (Number(tto.value) / 100);
+  range = [lo, hi];
+  document.getElementById('tlabel').textContent =
+    `${fmtTime(lo).slice(0,10)} ~ ${fmtTime(hi).slice(0,10)}`;
+  refresh();
+}
+tfrom.oninput = () => { if (Number(tfrom.value) > Number(tto.value)) tfrom.value = tto.value; applyRange(); };
+tto.oninput = () => { if (Number(tto.value) < Number(tfrom.value)) tto.value = tfrom.value; applyRange(); };
+
+document.getElementById('q').oninput = e => {
+  search = e.target.value.trim().toLowerCase();
+  refresh();
+};
+const _bb = document.getElementById('batchbtn');
+if (_bb) _bb.addEventListener('click', toggleBatch);
+document.getElementById('exportbtn').onclick = async () => {
+  const r = await fetch('/api/export');
+  const j = await r.json();
+  if (!j.ok){ alert(j.error || '导出失败'); return; }
+  const blob = new Blob([JSON.stringify(j, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `memories-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+// 「同步」：不等 30 分钟的计划任务，立刻按数据库重建 graph.json 再读回来
+async function syncNow(){
+  const btn = document.getElementById('syncbtn');
+  if (!btn || READONLY) return;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '同步中…';
+  try {
+    const r = await fetch('/api/rebuild', {
+      method: 'POST', headers: {'X-Viewer': '1'}
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '重建失败');
+    await load(true);
+    toast(`已同步：${j.nodes} 球 · 记忆 ${j.memories} 条（共用 ${j.shared} / 本地 ${j.local}）`);
+  } catch (e) {
+    toast('同步失败：' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+document.getElementById('syncbtn').onclick = syncNow;
+bindAccts();
+bindCore();
+
+// ---------- 加载 ----------
+async function load(keepPos){
+  const res = await fetch('api/graph?ts=' + Date.now(), {cache: 'no-store'});
+  if (res.status === 401) throw new Error('未登录');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const g = await res.json();
+  CORE = (g.meta && g.meta.core) || CORE;
+  if (keepPos){
+    // 保留原节点对象（坐标不丢），只把字段覆盖成新值：球不会重排跳动
+    const old = new Map(ALL.nodes.map(n => [n.id, n]));
+    const nodes = (g.nodes || []).map(n => {
+      const prev = old.get(n.id);
+      if (prev){ Object.assign(prev, n); return prev; }
+      return n;
+    });
+    ALL = {nodes, links: g.links || []};
+  } else {
+    ALL = seeded({nodes: g.nodes || [], links: g.links || []});
+  }
+  ALL.meta = g.meta || {};
+  Object.assign(TYPES, (g.meta && g.meta.types) || {});
+  fillPeople(g.meta || {});
+  renderStats(g.meta || {});
+  renderLegend(g.meta || {});
+  renderHelp(g.meta || {});
+  refresh();
+  if (person && !FLAT && !didInit){
+    // 带 ?person= 打开：直接进入二维平铺。
+    FLAT = true;
+    document.body.classList.add('flat');
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('view', 'ops');
+      history.replaceState(null, '', u);
+    } catch (e) {}
+    syncFlatButton();
+    refresh();
+  }
+  if (!didFit){
+    didFit = true;
+    if (!person && !GALAXY) setTimeout(() => fitView(900, -120), 900);
+  }
+  if (keepPos || didInit) return;
+  didInit = true;
+  const params = new URLSearchParams(location.search);
+  const pick = params.get('pick');
+  const q = params.get('q');
+  if (q){
+    search = q.trim().toLowerCase();
+    const box = document.getElementById('q');
+    if (box) box.value = q;
+    refresh();
+  }
+  if (pick){
+    // 兼容旧的 ?pick=mem:9（默认按共用记忆找）
+    let node = ALL.nodes.find(n => n.id === pick);
+    if (!node){
+      const ref = memRefOf(pick);
+      if (ref) node = ALL.nodes.find(n => n.id === memNodeId(ref));
+    }
+    if (node){ showDetail(node); flyTo(node); }
+  }
+  if (params.has('batch')) toggleBatch();
+  if (person){
+    setTimeout(() => FLAT ? fitFlat(900) : fitView(900, -140), 950);
+  }
+  if (params.has('nohover')) hoverOff = true;
+  if (!load._galaxyInit) {
+    // 只在本次打开页面时决定一次；之后 load()/refresh() 不再强制切回星云
+    load._galaxyInit = true;
+    // 单个人视图已经是二维平铺，不要再自动切回星云。
+    if (!person && params.get('view') !== 'ops') setTimeout(() => setGalaxy(true), 120);
+  }
+  if (params.has('linkdim')) Graph.linkOpacity(0.02).linkDirectionalParticles(0).linkWidth(0.1);
+  if (params.has('lw')) Graph.linkWidth(Number(params.get('lw')) || 2.4);
+  if (params.has('linksonly')) Graph.nodeOpacity(0);   // 只留连线，用来验证线画没画出来
+  if (params.has('camdiag')){
+    setInterval(() => {
+      const cam = Graph.camera();
+      const p = [cam.position.x, cam.position.y, cam.position.z].map(v => v.toFixed(0)).join(',');
+      let ctype = '?'; try { ctype = Graph.controlType(); } catch (e) {}
+      let ldist = '?'; try { const lf = Graph.d3Force('link'); ldist = typeof lf.distance === 'function' ? String(lf.distance()({kind: 'in'})) : 'nofn'; } catch (e) { ldist = 'err'; }
+      document.getElementById('stats').textContent =
+        `cam=${p} 控制=${ctype} 线距=${ldist} 回中心=${!!document.getElementById('home')}`;
+    }, 400);
+  }
+  if (params.has('diag')){
+    setTimeout(() => {
+      const scene = Graph.scene();
+      const info = [];
+      let allMeshes = 0, instanced = 0, mats = {}, emissiveMats = 0, vs = 0;
+      scene.traverse(o => {
+        if (o.isMesh || o.isInstancedMesh){
+          allMeshes++;
+          if (o.isInstancedMesh) instanced++;
+          const m = o.material || {};
+          mats[m.type] = (mats[m.type] || 0) + 1;
+          if (m.emissive) emissiveMats++;
+          if (o.geometry && o.geometry.attributes && o.geometry.attributes.position){
+            vs = o.geometry.attributes.position.count;
+          }
+        }
+      });
+      let clearA = '?';
+        try { clearA = Graph.renderer().getClearAlpha(); } catch (e) {}
+        let pulsePx = 0;
+        try {
+          if (pulseCtx && pulseCanvas){
+            const im = pulseCtx.getImageData(0, 0, pulseCanvas.width, pulseCanvas.height).data;
+            for (let i = 3; i < im.length; i += 16) if (im[i] > 0) pulsePx++;
+          }
+        } catch (e) {}
+        document.getElementById('stats').textContent =
+        `THREE=${typeof THREE} FG=${typeof ForceGraph3D} | ` +
+        `球网格 ${allMeshes} 实例化 ${instanced} 材质 ${JSON.stringify(mats)} ` +
+        `有自发光 ${emissiveMats} 顶点 ${vs} | 线透明 ${Graph.linkOpacity()} ` +
+        `| clearAlpha ${clearA} | 脉冲 ${pulseDots.length}/${pulsePx} | 分辨率 ${Graph.nodeResolution()}`;
+    }, 2500);
+  }
+}
+
+// ---------- 只读模式：给别人看时用（服务端也会拒绝写接口） ----------
+function applyReadonly(){
+  document.body.classList.add('ro');
+  const badge = document.getElementById('robadge');
+  if (badge){
+    badge.hidden = false;
+    badge.textContent = GUEST ? '未登录 · 只看球体概况' : '只读';
+  }
+  const bb = document.getElementById('batchbtn');
+  if (bb) bb.remove();
+  const sb = document.getElementById('syncbtn');
+  if (sb) sb.remove();
+  if (GUEST){
+    // 未登录只能看球体概况；这些入口会请求具体内容，直接收起来。
+    ['timebtn', 'exportbtn', 'corebtn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+  }
+  document.querySelectorAll('#detail textarea').forEach(t => { t.readOnly = true; });
+  const settings = document.querySelector('header a.btn[href="settings.html"]');
+  if (settings) settings.remove();
+}
+// 8765 是主人本机视图，不带登录；给一个明显的入口跳到 8767 账号页。
+function setupAccountLink(){
+  if (ACCOUNTS) return;
+  const a = document.getElementById('acctlink');
+  if (!a) return;
+  // 只有「只读站（8766）→ 账号站（8767）」这一对才显示入口；
+  // 单独跑 8765 时显示它只会点出一个连不上的地址。
+  if (location.port !== '8766') return;
+  const host = location.hostname || '127.0.0.1';
+  const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+  a.href = `${proto}//${host}:8767/login`;
+  a.textContent = '登录查看详情';
+  a.hidden = false;
+}
+// ---------- 账号模式：只能看自己那份，顶栏显示昵称 + 退出 ----------
+function applyAccounts(){
+  document.body.classList.add('accounts');
+  const admin = !!(ME && ME.admin);
+  if (admin) document.body.classList.add('admin');
+  const box = document.getElementById('acct');
+  if (box && ME){
+    box.hidden = false;
+    const name = ME.label && ME.label !== ME.qq
+      ? `${esc(ME.label)}（${esc(ME.qq)}）` : `QQ ${esc(ME.qq)}`;
+    box.innerHTML = (admin ? '管理员 · ' : '') + `${name} <a href="/logout">退出</a>`;
+  }
+  if (admin) {   // 管理员保留「看谁 / 多选 / 同步 / 开关」，外加账号管理
+    const ab = document.getElementById('acctbtn');
+    if (ab) ab.hidden = false;
+    return;
+  }
+  // 普通账号：整张图能看，但别人的球只有概况；只能改自己的数据
+  const ab = document.getElementById('acctbtn');
+  if (ab) ab.remove();
+  const st = document.querySelector('header a.btn[href="settings.html"]');
+  if (st) st.remove();
+  // 数字生命页是管理员后台，普通账号不显示入口（服务端也会 302 回主图）。
+  document.querySelectorAll('header a.btn[href="life"]').forEach(a => a.remove());
+}
+// ---------- 管理员：账号管理 ----------
+function acctRows(list){
+  const box = document.getElementById('acctrows');
+  if (!box) return;
+  if (!list.length){ box.innerHTML = '<div class="mnote">还没有账号。</div>'; return; }
+  box.innerHTML = list.map(a => `
+    <div class="acctrow" data-qq="${esc(a.qq)}">
+      <div class="who"><b>${esc(a.qq)}</b><span>${esc(a.nick || '')}</span>
+        <em class="${a.admin ? 'adm' : ''}">${a.admin ? '管理员' : '普通'}</em></div>
+      <div class="pw"><code>${a.password ? esc(a.password) : '（旧账号不可查看，点改密重设）'}</code></div>
+      <div class="ops">
+        <button class="btn" data-act="pw">改密</button>
+        <button class="btn" data-act="role">${a.admin ? '取消管理员' : '设为管理员'}</button>
+        <button class="btn warn" data-act="del">删除</button>
+      </div>
+    </div>`).join('');
+}
+async function acctPost(payload){
+  const r = await fetch('/api/accounts', {
+    method: 'POST', cache: 'no-store',
+    headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+    body: JSON.stringify(payload)
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  acctRows(j.accounts || []);
+  if (j.password) toast(`新密码：${j.password}`);
+  return j;
+}
+async function openAccts(){
+  const m = document.getElementById('acctmodal');
+  if (!m) return;
+  m.hidden = false;
+  try {
+    const r = await fetch('/api/accounts', {cache: 'no-store'});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    acctRows(j.accounts || []);
+  } catch (e) { toast('读取账号失败：' + e.message, true); }
+}
+function bindAccts(){
+  const m = document.getElementById('acctmodal');
+  const open = document.getElementById('acctbtn');
+  if (open) open.onclick = openAccts;
+  if (!m) return;
+  const close = document.getElementById('acctclose');
+  if (close) close.onclick = () => { m.hidden = true; };
+  m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+  const add = document.getElementById('acctadd');
+  if (add) add.onclick = async () => {
+    const qq = document.getElementById('nqq').value.trim();
+    const pw = document.getElementById('npw').value;
+    if (!/^\d{5,12}$/.test(qq)) { toast('QQ 号要是 5-12 位数字', true); return; }
+    try {
+      await acctPost({action: 'add', qq, password: pw || undefined,
+                      admin: document.getElementById('nadmin').checked});
+      document.getElementById('nqq').value = '';
+      document.getElementById('npw').value = '';
+      document.getElementById('nadmin').checked = false;
+    } catch (e) { toast(e.message, true); }
+  };
+  m.addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const row = btn.closest('.acctrow');
+    const qq = row && row.dataset.qq;
+    if (!qq) return;
+    const act = btn.dataset.act;
+    try {
+      if (act === 'pw') {
+        const pw = prompt(`给 ${qq} 设新密码（留空随机生成）：`, '');
+        if (pw === null) return;
+        await acctPost({action: 'passwd', qq, password: pw || undefined});
+      } else if (act === 'role') {
+        const isAdmin = !!row.querySelector('em.adm');
+        await acctPost({action: 'role', qq, admin: !isAdmin});
+      } else if (act === 'del') {
+        if (!confirm(`删除账号 ${qq}？删掉后这个 QQ 将无法登录。`)) return;
+        await acctPost({action: 'remove', qq});
+      }
+    } catch (err) { toast(err.message, true); }
+  });
+}
+
+async function openCore(){
+  const m = document.getElementById('coremodal');
+  const rows = document.getElementById('corerows');
+  if (!m || !rows) return;
+  m.hidden = false;
+  rows.innerHTML = '<div class="mnote">读取中…</div>';
+  try {
+    const [cr, fr] = await Promise.all([
+      fetch('/api/core?limit=50', {cache: 'no-store'}),
+      fetch('/api/conflicts?limit=20', {cache: 'no-store'})
+    ]);
+    const cj = await cr.json().catch(() => ({}));
+    const fj = await fr.json().catch(() => ({}));
+    if (!cr.ok || !cj.ok) throw new Error(cj.error || ('HTTP ' + cr.status));
+    if (!fr.ok || !fj.ok) throw new Error(fj.error || ('HTTP ' + fr.status));
+    const items = cj.items || [];
+    const conflicts = fj.items || [];
+    let html = '';
+    if (!items.length) {
+      html += '<div class="mnote">现在没有待审候选。重要或常被想起的记忆，会在夜间整理后出现在这里。</div>';
+    } else {
+      html += items.map(it => {
+        const imp = Number(it.importance || 0).toFixed(2);
+        return `<div class="coreitem" data-qid="${esc(it.qid)}">
+          <div class="coretxt">${esc(it.content || '')}
+            <div class="coremeta">${esc(it.speaker_id || '')} · 重要 ${imp} · 被想起 ${it.access_count || 0} 次 · ${esc(it.reason || '')}</div>
+          </div>
+          <div class="coreops">
+            <button class="btn" data-op="approve">批准永久</button>
+            <button class="btn warn" data-op="reject">拒绝</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    if (conflicts.length) {
+      html += '<div class="mhead" style="margin-top:16px"><b>待处理冲突</b></div>';
+      html += conflicts.map(c => `<div class="coreitem" data-cid="${esc(c.id)}">
+        <div class="coretxt"><b>旧：</b>${esc(c.old_content || '')}<br><b>新：</b>${esc(c.new_content || '')}
+          <div class="coremeta">${esc(c.speaker_id || '')} · ${esc(c.reason || '')}</div>
+        </div>
+        <div class="coreops">
+          <button class="btn" data-cop="keep_old">保留旧值</button>
+          <button class="btn warn" data-cop="keep_new">用新值</button>
+        </div>
+      </div>`).join('');
+    }
+    rows.innerHTML = html;
+  } catch (e) {
+    rows.innerHTML = '<div class="mnote">读取失败：' + esc(e.message) + '</div>';
+  }
+}
+function bindCore(){
+  const m = document.getElementById('coremodal');
+  const open = document.getElementById('corebtn');
+  if (open) open.onclick = openCore;
+  if (!m) return;
+  const close = document.getElementById('coreclose');
+  if (close) close.onclick = () => { m.hidden = true; };
+  m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+  const rows = document.getElementById('corerows');
+  if (rows) rows.addEventListener('click', async e => {
+    const cbtn = e.target.closest('button[data-cop]');
+    if (cbtn) {
+      const citem = cbtn.closest('.coreitem');
+      if (!citem) return;
+      cbtn.disabled = true;
+      try {
+        const r = await fetch('/api/conflicts', {
+          method: 'POST', cache: 'no-store',
+          headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+          body: JSON.stringify({id: Number(citem.dataset.cid), op: cbtn.dataset.cop})
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        toast(cbtn.dataset.cop === 'keep_old' ? '已保留旧值' : '已改用新值');
+        await openCore();
+        await load(true);
+      } catch (err) {
+        cbtn.disabled = false;
+        toast('处理失败：' + err.message, true);
+      }
+      return;
+    }
+    const btn = e.target.closest('button[data-op]');
+    if (!btn) return;
+    const item = btn.closest('.coreitem');
+    if (!item) return;
+    const qid = Number(item.dataset.qid);
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/core', {
+        method: 'POST', cache: 'no-store',
+        headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+        body: JSON.stringify({id: qid, op: btn.dataset.op})
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      toast(btn.dataset.op === 'approve' ? '已设为永久' : '已拒绝');
+      await openCore();
+      await load(true);
+    } catch (err) {
+      btn.disabled = false;
+      toast('处理失败：' + err.message, true);
+    }
+  });
+}
+
+async function initMode(){
+  try {
+    const res = await fetch('/api/mode', {cache: 'no-store'});
+    if (res.status === 401){ location.replace('/login'); return; }
+    const j = await res.json();
+    if (j && j.readonly) READONLY = true;
+    if (j && j.guest) GUEST = true;
+    if (j && j.accounts){
+      ACCOUNTS = true;
+      ME = j.me || null;
+    }
+  } catch (e) { /* 老服务没有这个接口就当可写 */ }
+  if (READONLY) applyReadonly();
+  if (GUEST) document.querySelectorAll('header a.btn[href="life"]').forEach(a => a.remove());
+  if (ACCOUNTS) applyAccounts(); else setupAccountLink();
+}
+if (READONLY) applyReadonly();
+initMode();
+
+// ---------- 激素 → 星云氛围：色温、亮度、脉冲随多巴胺/皮质醇变 ----------
+async function syncMood(){
+  try{
+    const r = await fetch('/api/life/state', {cache:'no-store'});
+    if (!r.ok) return;
+    const st = await r.json();
+    const h = (st && st.hormones) || {};
+    if (h.enabled === false) return;
+    const d = Math.max(0, Math.min(100, Number(h.dopamine != null ? h.dopamine : 50)));
+    const c = Math.max(0, Math.min(100, Number(h.cortisol != null ? h.cortisol : 50)));
+    const hue = Math.round(258 + (d - 50) * 0.8);          // 兴奋偏紫红，低落偏青蓝
+    document.documentElement.style.setProperty('--mood-hue', String(hue));
+    document.documentElement.style.setProperty('--mood-light', (3 + d * 0.06).toFixed(1) + '%');
+    document.documentElement.style.setProperty('--pulse-op', (0.35 + d / 100 * 0.6).toFixed(2));
+    MOOD_TEXT = `多巴胺 ${Math.round(d)} · 皮质醇 ${Math.round(c)}`;
+    if (GALAXY) updateGalaxyHud();
+  }catch(e){ /* 没开数字生命就保持原样 */ }
+}
+syncMood();
+setInterval(syncMood, 60000);
+
+load().catch(e => {
+  if (e && e.message === '未登录'){ location.replace('/login'); return; }
+  const msg = String((e && e.message) || '加载失败');
+  document.getElementById('stats').textContent = /Failed to fetch|NetworkError|load failed/i.test(msg)
+    ? '连不上服务：确认 start-viewer-accounts.bat 的窗口还开着，然后刷新本页'
+    : '加载失败：' + msg;
+  console.error(e);
+});
+</script>
+</body>
+</html>

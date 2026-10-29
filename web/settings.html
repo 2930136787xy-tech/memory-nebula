@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>记忆星云 · 能力开关</title>
+<style>
+  :root{--bg:#05060a;--panel:rgba(14,18,30,.92);--line:rgba(120,160,255,.16);
+    --text:#e8edf7;--dim:#8a96ad;--ok:#58d68d;--off:#5d6b82}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);
+    font:14px/1.7 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;padding:32px 20px 60px}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 0%,rgba(70,110,220,.16),transparent 60%)}
+  .wrap{max-width:720px;margin:0 auto;position:relative}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:6px 18px;margin-bottom:16px;backdrop-filter:blur(10px)}
+  .card h2{font-size:13px;color:var(--dim);font-weight:600;letter-spacing:.6px;
+    margin:14px 0 6px}
+  .row{display:flex;align-items:center;gap:14px;padding:11px 0;
+    border-top:1px solid rgba(255,255,255,.05)}
+  .row:first-of-type{border-top:none}
+  .row .txt{flex:1}
+  .row .name{font-size:14px}
+  .row .desc{font-size:12px;color:var(--dim);line-height:1.5}
+  .sw{position:relative;width:46px;height:25px;flex:0 0 auto}
+  .sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+  .sw .track{position:absolute;inset:0;border-radius:999px;background:#20283a;
+    transition:background .18s;pointer-events:none}
+  .sw .knob{position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;
+    background:#7d8aa3;transition:transform .18s,background .18s;pointer-events:none}
+  .sw input:checked + .track{background:rgba(77,163,255,.55)}
+  .sw input:checked ~ .knob{transform:translateX(21px);background:#d8e8ff}
+  select{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:5px 9px;font-size:13px;outline:none}
+  .foot{color:var(--dim);font-size:12.5px;margin-top:18px;line-height:1.8}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:rgba(40,200,120,.14);border:1px solid rgba(88,214,141,.5);color:#b8ffd4;
+    padding:8px 16px;border-radius:9px;font-size:13px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:rgba(255,90,110,.14);border-color:rgba(255,90,110,.5);color:#ffb3bd}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>能力总开关</h1>
+  <div class="sub">对所有对话、所有人格生效。改完立即保存，鱼下一条消息就按新开关走。</div>
+
+  <div class="card">
+    <h2>记忆召回</h2>
+    <div class="row">
+      <div class="txt"><div class="name">启用记忆召回</div>
+        <div class="desc">关掉后，鱼不会把旧记忆塞进提示词</div></div>
+      <label class="sw"><input type="checkbox" data-k="recall.enabled"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">语义召回</div>
+        <div class="desc">用云端向量找“意思相近”的记忆；关掉退回字面匹配</div></div>
+      <label class="sw"><input type="checkbox" data-k="recall.semantic"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">同义扩展</div>
+        <div class="desc">“那个菜”→“红烧肉”这类说法映射，纯本地不花钱</div></div>
+      <label class="sw"><input type="checkbox" data-k="recall.synonym"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">MMR 检索多样性</div>
+        <div class="desc">少塞近重复记忆，多留不同角度；永久记忆仍然优先</div></div>
+      <label class="sw"><input type="checkbox" data-k="recall.mmr"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">召回日志</div>
+        <div class="desc">记录每轮为什么选中这些记忆；只留 30 天，不写向量</div></div>
+      <label class="sw"><input type="checkbox" data-k="recall.log"><span class="track"></span><span class="knob"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>记忆巩固</h2>
+    <div class="row">
+      <div class="txt"><div class="name">写入质量门</div>
+        <div class="desc">挡掉问句、命令、密码/验证码、空泛应答，减少垃圾记忆</div></div>
+      <label class="sw"><input type="checkbox" data-k="memory.write_gate"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">夜间巩固</div>
+        <div class="desc">每天凌晨去重合并，保留时间线；永久记忆不参与合并</div></div>
+      <label class="sw"><input type="checkbox" data-k="memory.consolidate"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">长期摘要</div>
+        <div class="desc">把同一人的多条记忆压成一条摘要，给提示词做背景</div></div>
+      <label class="sw"><input type="checkbox" data-k="memory.abstract"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">核心关系（系统 × 管理员）</div>
+        <div class="desc">提示词记住管理员与系统的核心关系；本地/云端共用</div></div>
+      <label class="sw"><input type="checkbox" data-k="memory.core_context"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">核心候选队列</div>
+        <div class="desc">重要/常被想起的记忆进入待审队列，批准后才变永久</div></div>
+      <label class="sw"><input type="checkbox" data-k="memory.core_queue"><span class="track"></span><span class="knob"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>情绪与遗忘</h2>
+    <div class="row">
+      <div class="txt"><div class="name">情绪层</div>
+        <div class="desc">心情、语气随对话起伏</div></div>
+      <label class="sw"><input type="checkbox" data-k="emotion.enabled"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">记小本本</div>
+        <div class="desc">被惹到会记账，道歉才消</div></div>
+      <label class="sw"><input type="checkbox" data-k="emotion.grudge"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">遗忘曲线</div>
+        <div class="desc">不重要的记忆随时间变淡，夜间统一结算</div></div>
+      <label class="sw"><input type="checkbox" data-k="forget.enabled"><span class="track"></span><span class="knob"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>人格与星云</h2>
+    <div class="row">
+      <div class="txt"><div class="name">人格结构化</div>
+        <div class="desc">按重要性重排人格档案，预算不够先保说话风格</div></div>
+      <label class="sw"><input type="checkbox" data-k="persona.structured"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">语义边</div>
+        <div class="desc">星云里青色连线；关掉后重建不再调云端算向量</div></div>
+      <label class="sw"><input type="checkbox" data-k="viewer.semantic_edges"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div class="txt"><div class="name">每日自动重建图</div>
+        <div class="desc">计划任务每 30 分钟刷新一次星云数据</div></div>
+      <label class="sw"><input type="checkbox" data-k="viewer.auto_rebuild"><span class="track"></span><span class="knob"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>向量来源</h2>
+    <div class="row">
+      <div class="txt"><div class="name">建向量用哪边</div>
+        <div class="desc">云端走网络约 ¥0.0001/次；关闭则只用字面匹配</div></div>
+      <select id="provider">
+        <option value="cloud">云端（DashScope）</option>
+        <option value="off">关闭</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="foot">
+    开关存在 <code>settings.json</code>，所有模块按文件修改时间热加载，不用重启。
+    <br>“每日自动重建图”是提示位，真正的计划任务是 <code>MemoryNebulaRebuild</code>。
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+function toast(msg, err){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.toggle('err', !!err); t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function setDeep(obj, path, value){
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]] = cur[parts[i]] || {};
+  cur[parts[parts.length - 1]] = value;
+}
+function getDeep(obj, path){
+  return path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
+}
+async function save(patch){
+  const r = await fetch('/api/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+    body: JSON.stringify(patch)
+  });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || '保存失败');
+  return j.settings;
+}
+async function boot(){
+  const r = await fetch('/api/settings');
+  const j = await r.json();
+  const s = j.settings || {};
+  document.querySelectorAll('input[data-k]').forEach(cb => {
+    cb.checked = !!getDeep(s, cb.dataset.k);
+    cb.onchange = async () => {
+      const patch = {};
+      setDeep(patch, cb.dataset.k, cb.checked);
+      try { await save(patch); toast('已保存'); }
+      catch (e) { cb.checked = !cb.checked; toast(e.message, true); }
+    };
+  });
+  const sel = document.getElementById('provider');
+  sel.value = (s.embed && s.embed.provider) || 'cloud';
+  sel.onchange = async () => {
+    try { await save({embed: {provider: sel.value}}); toast('已保存'); }
+    catch (e) { toast(e.message, true); }
+  };
+}
+boot().catch(e => toast('读取失败：' + e.message, true));
+</script>
+</body>
+</html>

@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数字生命 · core</title>
+<link rel="stylesheet" href="/vendor/pico.min.css">
+<style>
+  :root{
+    --bg:#080a12; --panel:rgba(21,24,38,.72); --panel2:rgba(28,32,50,.6);
+    --line:rgba(255,255,255,.07); --text:#e9ebf4; --muted:#8b90a6;
+    --accent:#8b5cff; --cyan:#3fd0ff; --pink:#ff5ca8; --ok:#3ddc97; --warn:#ffb454;
+    --r:18px;
+  }
+  *{box-sizing:border-box}
+  html,body{min-height:100%}
+  body{
+    margin:0; color:var(--text);
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 800px at 12% -10%, rgba(124,92,255,.20), transparent 60%),
+      radial-gradient(900px 700px at 100% 0%, rgba(63,208,255,.12), transparent 55%),
+      radial-gradient(800px 600px at 60% 120%, rgba(255,92,168,.10), transparent 60%),
+      var(--bg);
+    background-attachment:fixed;
+  }
+  .topbar{
+    position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between;
+    padding:14px 28px; backdrop-filter:blur(14px);
+    background:linear-gradient(180deg, rgba(8,10,18,.86), rgba(8,10,18,.55));
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-size:17px; letter-spacing:.5px}
+  .brand em{font-style:normal; color:var(--muted); font-weight:400; font-size:13px; letter-spacing:2px}
+  .dot{width:9px; height:9px; border-radius:50%; background:var(--ok); box-shadow:0 0 12px var(--ok); animation:pulse 2.4s infinite}
+  @keyframes pulse{50%{opacity:.45}}
+  .top-right{display:flex; align-items:center; gap:12px}
+  .pill{font-size:12px; color:var(--muted); border:1px solid var(--line); padding:6px 12px; border-radius:999px; background:var(--panel2)}
+  .pill.ok{color:var(--ok); border-color:rgba(61,220,151,.35)}
+  .pill.bad{color:#ff7b7b; border-color:rgba(255,123,123,.35)}
+
+  .wrap{max-width:1280px; margin:0 auto; padding:34px 28px 80px}
+  .hero{display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:26px}
+  .hero h1{font-size:34px; line-height:1.15; margin:0 0 8px; letter-spacing:.5px;
+    background:linear-gradient(92deg,#fff 10%, #b9a6ff 55%, #6fe3ff 95%); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .hero p{margin:0; color:var(--muted); font-size:14px}
+  .temp-card{
+    min-width:190px; padding:16px 20px; border-radius:16px; border:1px solid var(--line);
+    background:linear-gradient(160deg, rgba(139,92,255,.18), rgba(63,208,255,.08));
+    text-align:right;
+  }
+  .temp-card .label{display:block; font-size:12px; color:var(--muted); letter-spacing:1px}
+  .temp-card strong{font-size:34px; font-weight:600; font-variant-numeric:tabular-nums}
+  .temp-card small{display:block; color:var(--muted); font-size:12px; margin-top:2px}
+
+  .grid{display:grid; grid-template-columns:repeat(12,1fr); gap:18px}
+  .card{
+    grid-column:span 6; position:relative; border-radius:var(--r); border:1px solid var(--line);
+    background:var(--panel); backdrop-filter:blur(16px); padding:20px 20px 18px;
+    box-shadow:0 10px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+    transition:transform .18s ease, border-color .18s ease;
+  }
+  .card:hover{transform:translateY(-2px); border-color:rgba(139,92,255,.35)}
+  .card.wide{grid-column:span 12}
+  .card.reserved{border-style:dashed; background:rgba(18,20,32,.42); opacity:.72}
+  .card.reserved:hover{transform:none; border-color:var(--line)}
+  .chead{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px}
+  .chead h2{margin:0; font-size:15px; letter-spacing:1px; color:#cdd2e6; font-weight:600}
+  .chead .ico{width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-size:14px;
+    background:linear-gradient(140deg, rgba(139,92,255,.35), rgba(63,208,255,.18)); margin-right:10px}
+  .chead .left{display:flex; align-items:center}
+  .badge{font-size:11px; color:var(--muted); border:1px dashed var(--line); padding:3px 8px; border-radius:999px}
+  .badge.live{color:var(--ok); border-color:rgba(61,220,151,.4); border-style:solid}
+  .badge.off{color:var(--warn); border-color:rgba(255,180,84,.35)}
+
+  /* 激素环 */
+  .rings{display:flex; gap:26px; align-items:center; flex-wrap:wrap}
+  .ring-wrap{display:flex; flex-direction:column; align-items:center; gap:8px}
+  .ring{
+    width:104px; height:104px; border-radius:50%; position:relative;
+    background:conic-gradient(var(--c) calc(var(--v) * 1%), rgba(255,255,255,.06) 0);
+    display:grid; place-items:center;
+  }
+  .ring::before{content:""; position:absolute; inset:11px; border-radius:50%; background:#101322; box-shadow:inset 0 0 18px rgba(0,0,0,.6)}
+  .ring b{position:relative; font-size:22px; font-variant-numeric:tabular-nums}
+  .ring small{position:relative; font-size:11px; color:var(--muted)}
+  .ring-wrap .name{font-size:12px; color:var(--muted); letter-spacing:1px}
+  .hormone-meta{flex:1; min-width:180px; color:var(--muted); font-size:13px; line-height:1.9}
+  .hormone-meta b{color:var(--text); font-variant-numeric:tabular-nums}
+
+  .switch{position:relative; display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; color:var(--muted)}
+  .switch input{display:none}
+  .track{width:44px; height:24px; border-radius:999px; background:rgba(255,255,255,.12); transition:.2s; position:relative}
+  .track::after{content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:.2s}
+  .switch input:checked + .track{background:linear-gradient(90deg,var(--accent),var(--cyan))}
+  .switch input:checked + .track::after{transform:translateX(20px)}
+  .switch input:disabled + .track{opacity:.4}
+
+  .btn{border:1px solid var(--line); background:var(--panel2); color:var(--text); padding:7px 14px; border-radius:10px;
+    font-size:13px; cursor:pointer; transition:.15s}
+  .btn:hover{border-color:rgba(139,92,255,.5); background:rgba(139,92,255,.14)}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),#5b8bff); border:0; color:#fff}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.danger{color:#ff9a9a; border-color:rgba(255,120,120,.25)}
+  .btn.danger:hover{background:rgba(255,80,80,.14); border-color:rgba(255,120,120,.5)}
+  .btn:disabled{opacity:.35; cursor:not-allowed}
+  .btn.xs{padding:3px 9px; font-size:12px; border-radius:8px}
+
+  .list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+  .item{
+    display:flex; align-items:center; gap:12px; padding:11px 13px; border-radius:12px;
+    background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.05);
+  }
+  .item .grow{flex:1; min-width:0}
+  .item .txt{font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .item .meta{font-size:11px; color:var(--muted); margin-top:2px}
+  .weight{height:4px; border-radius:99px; background:rgba(255,255,255,.08); margin-top:7px; overflow:hidden}
+  .weight i{display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,var(--pink),var(--accent)); width:var(--w)}
+  .empty{color:var(--muted); font-size:13px; padding:14px; text-align:center; border:1px dashed var(--line); border-radius:12px}
+
+  .form-row{display:flex; gap:8px; margin-top:12px}
+  .form-row input{flex:1; margin:0; background:rgba(255,255,255,.04); border:1px solid var(--line);
+    border-radius:10px; color:var(--text); padding:8px 12px; font-size:13px; outline:none}
+  .form-row input:focus{border-color:rgba(139,92,255,.6); box-shadow:0 0 0 3px rgba(139,92,255,.15)}
+  .admin-only{display:none}
+  body.admin .admin-only{display:inline-flex}
+  body.admin .admin-block{display:flex}
+  .admin-block{display:none}
+  .admin-card{display:none}
+  body.admin .admin-card{display:block}
+
+  /* 记忆星云入口：做成一条观察层横幅，而不是一个孤立按钮 */
+  #card-nebula{
+    grid-column:span 12; overflow:hidden;
+    background:
+      radial-gradient(520px 180px at 12% 0%, rgba(139,92,255,.22), transparent 70%),
+      radial-gradient(420px 160px at 92% 100%, rgba(63,208,255,.14), transparent 70%),
+      var(--panel);
+  }
+  #card-nebula::before{
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:.55;
+    background-image:
+      radial-gradient(1.5px 1.5px at 18% 28%, #fff, transparent),
+      radial-gradient(1px 1px at 34% 68%, #cfd8ff, transparent),
+      radial-gradient(1.5px 1.5px at 58% 22%, #9de7ff, transparent),
+      radial-gradient(1px 1px at 74% 58%, #fff, transparent),
+      radial-gradient(1.5px 1.5px at 88% 32%, #d6c8ff, transparent);
+  }
+  #card-nebula .chead{position:relative; z-index:1; margin-bottom:8px}
+  .nebula-copy{position:relative; z-index:1; color:var(--muted); font-size:13px; line-height:1.75; margin:0}
+  .nebula-actions{position:relative; z-index:1; display:flex; gap:9px; flex-wrap:wrap; margin-top:14px}
+  .nebula-note{position:relative; z-index:1; color:#77809b; font-size:12px; margin-top:10px}
+
+  .dream{font-size:13px; line-height:1.75; color:#c7cbe0; white-space:pre-wrap}
+  .dream .d{font-size:11px; color:var(--muted); margin-bottom:4px; letter-spacing:1px}
+  .dream + .dream{margin-top:12px; padding-top:12px; border-top:1px dashed var(--line)}
+
+  footer{margin-top:34px; color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap}
+
+  #toast{position:fixed; right:24px; bottom:24px; display:flex; flex-direction:column; gap:8px; z-index:60}
+  .toast{padding:10px 16px; border-radius:12px; font-size:13px; color:#fff; background:rgba(61,220,151,.18);
+    border:1px solid rgba(61,220,151,.45); backdrop-filter:blur(10px); animation:in .2s ease}
+  .toast.err{background:rgba(255,90,90,.16); border-color:rgba(255,90,90,.45)}
+  @keyframes in{from{opacity:0; transform:translateY(8px)}}
+
+  dialog::backdrop{background:rgba(4,5,10,.7); backdrop-filter:blur(4px)}
+  dialog article{background:#12152394; border:1px solid var(--line); border-radius:18px; padding:22px}
+  dialog h3{margin:0 0 6px; font-size:17px}
+  dialog p{color:var(--muted); font-size:12px; margin:0 0 14px}
+  dialog input{background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:10px;
+    color:var(--text); padding:10px 12px; width:100%; margin-bottom:14px}
+  .dlg-actions{display:flex; gap:10px; justify-content:flex-end}
+
+  @media (max-width:900px){
+    .card{grid-column:span 12}
+    .hero{flex-direction:column; align-items:flex-start}
+    .temp-card{text-align:left}
+  }
+  @media (max-width:600px){
+    body{padding:14px}
+    .card{padding:16px}
+    .hero h1{font-size:22px}
+    .item{padding:9px 10px}
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="dot" id="dot"></span> 数字生命 <em>CORE</em></div>
+  <div class="top-right">
+    <a class="btn" href="/" title="回到记忆星云" id="backNebula">星云</a>
+    <span class="pill" id="conn">连接中…</span>
+    <button class="btn" id="adminBtn">管理员解锁</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <h1>她的身体与心事</h1>
+    </div>
+    <div class="temp-card">
+      <span class="label">温度偏移</span>
+      <strong id="tempDelta">+0.00</strong>
+      <small id="tempHint">—</small>
+    </div>
+  </section>
+
+  <div class="grid">
+    <!-- 激素 -->
+    <article class="card" id="card-hormone">
+      <div class="chead">
+        <div class="left"><span class="ico">🫀</span><h2>内分泌</h2></div>
+        <span class="badge" id="hormoneBadge">—</span>
+      </div>
+      <div class="rings">
+        <div class="ring-wrap">
+          <div class="ring" id="ringDop" style="--c:linear-gradient(90deg,#8b5cff,#3fd0ff);--v:50"><b id="dopVal">50</b><small>多巴胺</small></div>
+          <span class="name">DOPAMINE</span>
+        </div>
+        <div class="ring-wrap">
+          <div class="ring" id="ringCor" style="--c:linear-gradient(90deg,#ff5ca8,#ffb454);--v:50"><b id="corVal">50</b><small>皮质醇</small></div>
+          <span class="name">CORTISOL</span>
+        </div>
+        <div class="hormone-meta">
+          基线 <b id="hBase">50</b><br>
+          即时温度 <b id="hTemp">0.70</b><br>
+          <label class="switch admin-only" style="margin-top:8px">
+            <input type="checkbox" id="hormoneSwitch"><span class="track"></span>启用内分泌
+          </label>
+        </div>
+      </div>
+      <div class="admin-block" style="gap:8px; margin-top:14px">
+        <button class="btn xs" data-op="hormone_reset">回到基线</button>
+        <button class="btn xs" data-op="hormone_set" data-key="dopamine" data-val="70">多巴胺 70</button>
+        <button class="btn xs" data-op="hormone_set" data-key="cortisol" data-val="65">皮质醇 65</button>
+      </div>
+    </article>
+
+    <!-- 执念 -->
+    <article class="card" id="card-obsession">
+      <div class="chead">
+        <div class="left"><span class="ico">🌙</span><h2>执念池</h2></div>
+        <span class="badge" id="obsBadge">—</span>
+      </div>
+      <ul class="list" id="obsList"></ul>
+      <div class="admin-block form-row">
+        <input id="obsInput" placeholder="还没放下的那句话…" maxlength="80">
+        <button class="btn primary" id="obsAdd">放进池子</button>
+      </div>
+    </article>
+
+    <!-- 疤痕 -->
+    <article class="card" id="card-scar">
+      <div class="chead">
+        <div class="left"><span class="ico">🩹</span><h2>疤痕</h2></div>
+        <span class="badge" id="scarBadge">—</span>
+      </div>
+      <ul class="list" id="scarList"></ul>
+      <div class="admin-block form-row">
+        <input id="scarInput" placeholder="刻下来就擦不掉了…" maxlength="80">
+        <button class="btn primary" id="scarAdd">固化</button>
+      </div>
+    </article>
+
+    <!-- 梦 -->
+    <article class="card" id="card-dream">
+      <div class="chead">
+        <div class="left"><span class="ico">💭</span><h2>梦</h2></div>
+        <span class="badge" id="dreamBadge">—</span>
+      </div>
+      <div id="dreamList"></div>
+    </article>
+
+    <!-- 迁移舱 -->
+    <article class="card" id="card-vault">
+      <div class="chead">
+        <div class="left"><span class="ico">🗝️</span><h2>迁移舱</h2></div>
+        <span class="badge" id="vaultBadge">—</span>
+      </div>
+      <ul class="list" id="vaultList"></ul>
+      <div class="admin-block form-row">
+        <button class="btn primary" id="vaultNow">现在备份</button>
+      </div>
+    </article>
+
+    <!-- 生长层 -->
+    <article class="card" id="card-growth">
+      <div class="chead">
+        <div class="left"><span class="ico">🌱</span><h2>生长层</h2></div>
+        <span class="badge" id="growthBadge">—</span>
+      </div>
+      <ul class="list" id="growthList"></ul>
+      <div class="admin-block form-row">
+        <input id="growthInput" placeholder="她慢慢长出来的习惯…" maxlength="60">
+        <button class="btn primary" id="growthAdd">记下来</button>
+      </div>
+    </article>
+
+    <!-- 器官 -->
+    <article class="card" id="card-organ">
+      <div class="chead">
+        <div class="left"><span class="ico">🧬</span><h2>器官</h2></div>
+        <span class="badge" id="organBadge">—</span>
+      </div>
+      <ul class="list" id="organList"></ul>
+    </article>
+
+    <!-- 每个人的情绪（管理员） -->
+    <article class="card admin-card" id="card-mood">
+      <div class="chead">
+        <div class="left"><span class="ico">🫧</span><h2>每个人的情绪</h2></div>
+      </div>
+      <ul class="list" id="moodList"></ul>
+    </article>
+
+    <!-- 审计（管理员） -->
+    <article class="card admin-card" id="card-audit">
+      <div class="chead">
+        <div class="left"><span class="ico">📜</span><h2>审计</h2></div>
+      </div>
+      <ul class="list" id="auditList"></ul>
+    </article>
+
+    <!-- 星云入口 -->
+    <article class="card" id="card-nebula">
+      <div class="chead">
+        <div class="left"><span class="ico">🌌</span><h2>记忆星云</h2></div>
+        <span class="badge">观察层</span>
+      </div>
+      <p class="nebula-copy">星云模式只看关系和光点，不改任何记忆；需要细看或整理时切到三维操作。</p>
+      <div class="nebula-actions">
+        <a class="btn primary" href="/?view=nebula">打开星云</a>
+        <a class="btn" href="/?view=ops">三维操作</a>
+      </div>
+      <div class="nebula-note">在「看谁」里选中一个人，会自动平铺成二维网格；切换模式不会动数据。</div>
+    </article>
+  </div>
+
+  <footer>
+    <span>数字生命 · <span id="updated">—</span></span>
+  </footer>
+</main>
+
+<dialog id="adminDlg">
+  <article>
+    <h3>管理员解锁</h3>
+    <p>输入 <code>config.json → core.web_token</code> 里的令牌。只存在本机浏览器里。</p>
+    <input id="tokenInput" type="password" placeholder="web_token" autocomplete="off">
+    <div class="dlg-actions">
+      <button class="btn" id="cancelToken">取消</button>
+      <button class="btn primary" id="saveToken">解锁</button>
+    </div>
+  </article>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let TOKEN = localStorage.getItem('coreToken') || '';
+let ADMIN = false;
+const hashTok = (location.hash.match(/token=([^&]+)/) || [])[1];
+if (hashTok) {
+  TOKEN = decodeURIComponent(hashTok);
+  localStorage.setItem('coreToken', TOKEN);
+  history.replaceState(null, '', location.pathname);
+}
+let S = null;
+
+function toast(msg, err){
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.textContent = msg;
+  $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+async function load(){
+  try{
+    const r = await fetch('/api/life/state', {cache:'no-store'});
+    if(!r.ok) throw new Error(r.status);
+    S = await r.json();
+    const siteAdmin = S.me ? !!S.me.admin : null;
+    if (S.me && !siteAdmin && TOKEN) { TOKEN = ''; localStorage.removeItem('coreToken'); }
+    ADMIN = siteAdmin !== null ? siteAdmin : !!TOKEN;
+    render();
+    $('#conn').textContent = '已连接';
+    $('#conn').className = 'pill ok';
+    $('#dot').style.background = 'var(--ok)';
+  }catch(e){
+    $('#conn').textContent = '连接断开';
+    $('#conn').className = 'pill bad';
+    $('#dot').style.background = '#ff7b7b';
+  }
+}
+
+async function act(op, extra={}){
+  const headers = {'Content-Type':'application/json', 'X-Viewer':'1'};
+  if(TOKEN) headers['X-Core-Token'] = TOKEN;
+  const r = await fetch('/api/life/action', {
+    method:'POST',
+    headers,
+    body: JSON.stringify({op, ...extra})
+  });
+  let j = {};
+  try{ j = await r.json(); }catch(e){}
+  if(!r.ok || !j.ok){ toast(j.error === 'forbidden' ? '令牌不对或不是管理员' : (j.error || '操作失败'), true); return false; }
+  toast('已保存');
+  await load();
+  return true;
+}
+
+function render(){
+  if(!S) return;
+  const h = S.hormones || {};
+  const dop = Math.round(h.dopamine ?? 50), cor = Math.round(h.cortisol ?? 50);
+  $('#dopVal').textContent = dop;
+  $('#corVal').textContent = cor;
+  $('#ringDop').style.setProperty('--v', dop);
+  $('#ringCor').style.setProperty('--v', cor);
+  $('#hBase').textContent = Math.round(h.baseline ?? 50);
+  $('#hTemp').textContent = (0.7 + (S.temperature_delta || 0)).toFixed(2);
+  $('#tempDelta').textContent = (S.temperature_delta >= 0 ? '+' : '') + Number(S.temperature_delta || 0).toFixed(2);
+  $('#tempHint').textContent = h.enabled ? '内分泌开着' : '未开启内分泌（不偏移）';
+  $('#hormoneBadge').textContent = h.enabled ? '运行中' : '关闭';
+  $('#hormoneBadge').className = 'badge ' + (h.enabled ? 'live' : 'off');
+  const sw = $('#hormoneSwitch');
+  sw.checked = !!h.enabled;
+  // 站点登录时没有 X-Core-Token，权限由账号角色决定，不能再拿 TOKEN 判断。
+  sw.disabled = !ADMIN;
+
+  const obs = S.obsessions || [], scars = S.scars || [];
+  $('#obsBadge').textContent = obs.length + ' 条';
+  $('#scarBadge').textContent = scars.length + ' 条';
+  $('#obsList').innerHTML = obs.length ? obs.map(o => `
+    <li class="item">
+      <div class="grow">
+        <div class="txt">${esc(o.text)}</div>
+        <div class="meta">权重 ${Number(o.weight || 0).toFixed(1)} · #${o.id}</div>
+        <div class="weight" style="--w:${Math.round((o.weight||0)*100)}%"><i></i></div>
+      </div>
+      <button class="btn xs danger admin-only" data-del-obs="${esc(o.id)}">删</button>
+    </li>`).join('') : '<div class="empty">池子是空的</div>';
+  $('#scarList').innerHTML = scars.length ? scars.map(s => `
+    <li class="item">
+      <div class="grow">
+        <div class="txt">${esc(s.text)}</div>
+        <div class="meta">锁定 · #${s.id}</div>
+      </div>
+      <button class="btn xs danger admin-only" data-del-scar="${esc(s.id)}">解除</button>
+    </li>`).join('') : '<div class="empty">身上还没有疤</div>';
+
+  const growth = S.growth || [];
+  const gv = growth.filter(g => g.status === 'approved');
+  const gp = growth.filter(g => g.status === 'proposed');
+  $('#growthBadge').textContent = gv.length + ' 条';
+  const rows = gp.concat(gv);
+  $('#growthList').innerHTML = rows.length ? rows.map(g => `
+    <li class="item">
+      <div class="grow">
+        <div class="txt">${esc(g.text)}</div>
+        <div class="meta">${g.status === 'approved' ? '已长出来' : '待确认'} · #${g.id}</div>
+      </div>
+      ${g.status === 'proposed'
+        ? `<button class="btn xs admin-only" data-g-ok="${esc(g.id)}">收下</button>
+           <button class="btn xs danger admin-only" data-g-no="${esc(g.id)}">不要</button>`
+        : `<button class="btn xs danger admin-only" data-g-del="${esc(g.id)}">删</button>`}
+    </li>`).join('') : '<div class="empty">还没有长出什么</div>';
+
+  const dreams = S.dreams || [];
+  $('#dreamBadge').textContent = dreams.length + ' 天';
+  $('#dreamList').innerHTML = dreams.length ? dreams.slice(0,3).map(d => `
+    <div class="dream"><div class="d">${esc(d.date)} · ${d.count} 条</div>${esc(d.last || '')}</div>`).join('')
+    : '<div class="empty">最近没有做梦</div>';
+
+  const vault = S.vault || [];
+  $('#vaultBadge').textContent = vault.length + ' 个';
+  $('#vaultList').innerHTML = vault.length ? vault.slice(0,4).map(v => `
+    <li class="item"><div class="grow"><div class="txt">${esc(v.id)}</div>
+    <div class="meta">${esc(v.created_at || '')}</div></div>
+    <a class="btn xs admin-only" href="/life/vault/${encodeURIComponent(v.id)}">下载</a></li>`).join('')
+    : '<div class="empty">还没有存档</div>';
+
+  const organs = S.organs || [];
+  $('#organBadge').textContent = organs.filter(o => o.status === 'enabled').length + ' 个';
+  $('#organList').innerHTML = organs.length ? organs.map(o => `
+    <li class="item">
+      <div class="grow">
+        <div class="txt">${esc(o.title)}</div>
+        <div class="meta">${o.status === 'enabled' ? '已启用' : (o.status === 'disabled' ? '已停用' : '待审')} · #${o.id}${o.why ? ' · ' + esc(o.why) : ''}</div>
+      </div>
+      ${o.status !== 'enabled'
+        ? `<button class="btn xs admin-only" data-o-on="${esc(o.id)}">启用</button>`
+        : `<button class="btn xs admin-only" data-o-off="${esc(o.id)}">停用</button>`}
+      <button class="btn xs danger admin-only" data-o-del="${esc(o.id)}">删</button>
+    </li>`).join('') : '<div class="empty">还没有器官提案</div>';
+
+  const moods = S.moods || [];
+  $('#moodList').innerHTML = moods.length ? moods.slice(0,8).map(m => `
+    <li class="item"><div class="grow"><div class="txt">${esc(m.qq)}</div>
+    <div class="meta">心情 ${m.valence} · 唤醒 ${m.arousal} · 好感 ${m.affection}</div></div></li>`).join('')
+    : '<div class="empty">还没有按人情绪</div>';
+
+  const audit = S.audit || [];
+  $('#auditList').innerHTML = audit.length ? audit.slice(-12).reverse().map(a => `
+    <li class="item"><div class="grow"><div class="txt">${esc(a.cmd)} ${esc(a.arg || '')}</div>
+    <div class="meta">${esc((a.ts || '').slice(5, 16))} · ${esc(a.result || '')}</div></div></li>`).join('')
+    : '<div class="empty">还没有审计</div>';
+
+  document.body.classList.toggle('admin', ADMIN);
+  const ab = $('#adminBtn');
+  if (S.me) { ab.hidden = true; }          // 站点登录模式：权限跟账号走，不需要令牌
+  else { ab.hidden = false; ab.textContent = ADMIN ? '管理员' : '管理员解锁'; }
+  $('#updated').textContent = '更新于 ' + new Date((S.ts || Date.now()/1000) * 1000).toLocaleTimeString();
+}
+
+function bind(){
+  if(location.port === '6198') $('#backNebula').hidden = true;
+  $('#adminBtn').onclick = () => { $('#tokenInput').value = TOKEN; $('#adminDlg').showModal(); };
+  $('#cancelToken').onclick = () => $('#adminDlg').close();
+  $('#saveToken').onclick = async () => {
+    const t = $('#tokenInput').value.trim();
+    if(!t) return toast('令牌不能为空', true);
+    const old = TOKEN; TOKEN = t;
+    const r = await fetch('/api/life/action', {method:'POST', headers:{'Content-Type':'application/json','X-Viewer':'1','X-Core-Token':TOKEN}, body:JSON.stringify({op:'ping'})});
+    if(r.ok){ localStorage.setItem('coreToken', t); $('#adminDlg').close(); toast('已解锁'); await load(); }
+    else { TOKEN = old; toast('令牌不对', true); }
+  };
+  $('#hormoneSwitch').onchange = e => act('hormone_enable', {value:e.target.checked});
+  document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => {
+    if(b.dataset.op === 'hormone_reset') return act('hormone_reset');
+    act('hormone_set', {key:b.dataset.key, value:Number(b.dataset.val)});
+  });
+  $('#obsAdd').onclick = () => {
+    const t = $('#obsInput').value.trim();
+    if(!t) return toast('先写点什么', true);
+    act('obsession_add', {text:t, weight:0.6}).then(ok => { if(ok) $('#obsInput').value=''; });
+  };
+  $('#scarAdd').onclick = () => {
+    const t = $('#scarInput').value.trim();
+    if(!t) return toast('先写点什么', true);
+    act('scar_add', {text:t}).then(ok => { if(ok) $('#scarInput').value=''; });
+  };
+  $('#growthAdd').onclick = () => {
+    const t = $('#growthInput').value.trim();
+    if(!t) return toast('先写点什么', true);
+    act('growth_add', {text:t}).then(ok => { if(ok) $('#growthInput').value=''; });
+  };
+  const vn = $('#vaultNow');
+  if(vn) vn.onclick = () => act('vault_export').then(ok => { if(ok) toast('备份好了'); });
+  document.addEventListener('click', e => {
+    const o = e.target.closest('[data-del-obs]'), s = e.target.closest('[data-del-scar]');
+    if(o) act('obsession_del', {id:Number(o.dataset.delObs)});
+    if(s) act('scar_del', {id:Number(s.dataset.delScar)});
+    const ok = e.target.closest('[data-g-ok]'), no = e.target.closest('[data-g-no]'),
+          del = e.target.closest('[data-g-del]');
+    if(ok) act('growth_mark', {id:Number(ok.dataset.gOk), status:'approved'});
+    if(no) act('growth_mark', {id:Number(no.dataset.gNo), status:'rejected'});
+    if(del) act('growth_del', {id:Number(del.dataset.gDel)});
+    const on = e.target.closest('[data-o-on]'), off = e.target.closest('[data-o-off]'),
+          odel = e.target.closest('[data-o-del]');
+    if(on) act('organ_mark', {id:Number(on.dataset.oOn), status:'enabled'});
+    if(off) act('organ_mark', {id:Number(off.dataset.oOff), status:'disabled'});
+    if(odel) act('organ_del', {id:Number(odel.dataset.oDel)});
+  });
+}
+
+bind();
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
