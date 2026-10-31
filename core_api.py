@@ -20,6 +20,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import core_life as CL
 
+try:
+    import affect_core as AC
+except Exception:  # noqa: BLE001
+    AC = None
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "config.json")
 GROWTH = os.path.join(HERE, "data", "core", "growth.json")
@@ -58,10 +63,26 @@ def web_token() -> str:
     return tok
 
 
-def state(admin: bool = True) -> dict:
+def state(admin: bool = True, qq: str = "") -> dict:
     cfg = _cfg()
     core = cfg.get("core") if isinstance(cfg.get("core"), dict) else {}
     h = CL.hormones()
+    # 情绪层是激素的唯一真源：内分泌环和温度偏移都从 affect 取，避免同一张卡两套数
+    aff = None
+    try:
+        aff = AC.state_view(admin=admin) if AC else None
+    except Exception:
+        aff = None
+    if aff and aff.get("enabled"):
+        ah, ab = aff["hormones"], aff["hormone_base"]
+        h = {"dopamine": round(ah["da"] * 100, 2),
+             "cortisol": round(ah["cor"] * 100, 2),
+             "baseline": round(ab["da"] * 100, 2),
+             "enabled": bool(h.get("enabled", True)),
+             "source": "affect"}
+        tdelta = round((ah["da"] - ah["cor"]) * 0.5, 3)
+    else:
+        tdelta = round(CL.temperature_delta(), 3)
     dreams = []
     if os.path.isdir(CL.DREAMS):
         for name in sorted(os.listdir(CL.DREAMS), reverse=True)[:7]:
@@ -78,7 +99,7 @@ def state(admin: bool = True) -> dict:
                  "inject": core.get("inject") or {},
                  "owner": str(core.get("owner") or "")},
         "hormones": h,
-        "temperature_delta": round(CL.temperature_delta(), 3),
+        "temperature_delta": tdelta,
         "obsessions": [o for o in CL._items(CL.OBS) if o.get("status", "open") == "open"],
         "scars": CL._items(CL.SCARS),
         "growth": CL._growth(),
@@ -87,8 +108,34 @@ def state(admin: bool = True) -> dict:
         "vault": [{"id": m.get("id"), "created_at": m.get("created_at")}
                   for m in CL.list_vaults()[:10]],
     }
+    try:
+        out["affect"] = aff if aff else {"enabled": False}
+    except Exception as e:  # noqa: BLE001
+        out["affect"] = {"enabled": False, "error": f"{type(e).__name__}: {e}"}
+    if not admin:
+        # 普通账号只看得到自己：别人的关系数值、梦、执念、伤痕、成长记录都不下发
+        me = str(qq or "").strip()
+        if aff and aff.get("enabled"):
+            aff["relations"] = [r for r in aff.get("relations") or []
+                                if str(r.get("id")) == me]
+        out["obsessions"] = []
+        out["scars"] = []
+        out["growth"] = []
+        out["organs"] = {}
+        out["dreams"] = []
+        out["vault"] = []
     if admin:
-        out["moods"] = CL.moods(80)
+        # 情绪层开着时，「每个人的情绪」也从它推：心情是全局的，亲密度按人取。
+        if aff and aff.get("enabled"):
+            _d, _der = aff["dims"], aff["derived"]
+            _v = round((_d["joy"] + _d["content"]) / 2.0 - _d["sad"], 2)
+            _a = round(1.0 - float(_der.get("fatigue") or 0.0), 2)
+            out["moods"] = [{"qq": r["id"], "valence": _v, "arousal": _a,
+                             "affection": r["attachment"],
+                             "updated_at": int(aff.get("ts") or time.time())}
+                            for r in aff.get("relations") or []]
+        else:
+            out["moods"] = CL.moods(80)
         out["audit"] = CL.audit_lines(40)
     return out
 
@@ -181,6 +228,53 @@ def _apply(payload: dict) -> dict:
         if op == "vault_export":
             man = CL.export("网页")
             return {"ok": True, "vault": CL.list_vaults()[:10], "id": man.get("id")}
+        if op == "affect_tick":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            AC.tick()
+            return {"ok": True, "affect": AC.state_view(admin=True)}
+        if op == "affect_reset":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            res = AC.reset()
+            res["affect"] = AC.state_view(admin=True)
+            return res
+        if op == "affect_set":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            res = AC.set_value(str(payload.get("group") or ""),
+                               str(payload.get("key") or ""),
+                               float(payload.get("value") or 0))
+            res["affect"] = AC.state_view(admin=True)
+            return res
+        if op == "affect_rel_del":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            res = AC.clear_relation(str(payload.get("contact") or ""))
+            res["affect"] = AC.state_view(admin=True)
+            return res
+        if op == "affect_event":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            res = AC.inject_event(str(payload.get("kind") or ""))
+            res["affect"] = AC.state_view(admin=True)
+            return res
+        if op == "affect_conf":
+            if not AC:
+                return {"ok": False, "error": "affect module missing"}
+            key = str(payload.get("key") or "")
+            val = payload.get("value")
+            if key == "enable":
+                val = bool(val)
+            elif key == "appraisal":
+                val = str(val)
+                if val not in ("auto", "keywords", "model"):
+                    return {"ok": False, "error": "appraisal 只能是 auto / keywords / model"}
+            else:
+                return {"ok": False, "error": "只能改 enable / appraisal"}
+            res = AC.set_conf(key, val)
+            res["affect"] = AC.state_view(admin=True)
+            return res
         return {"ok": False, "error": "unknown op"}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:80]}"}

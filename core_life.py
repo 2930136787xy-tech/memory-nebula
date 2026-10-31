@@ -34,7 +34,8 @@ AUDIT = os.path.join(CORE, "audit.log")
 SCHEMA = 1
 SECRET_KEYS = {"api_key", "key", "token", "password", "secret", "cloud_key",
                "access_token", "refresh_token", "app_secret"}
-CORE_FILES = ("growth.json", "hormones.json", "obsessions.json", "scars.json", "emotions.json")
+CORE_FILES = ("growth.json", "hormones.json", "obsessions.json", "scars.json",
+              "emotions.json", "affect.json")
 
 _pending: dict[str, dict] = {}
 
@@ -447,7 +448,7 @@ def dream_now(bot) -> str:
     sc = [s.get("text", "") for s in _items(SCARS)][-3:]
     ctx = "；".join([x for x in (obs + sc + mems) if x]) or "今天没什么特别的"
     msgs = [
-        {"role": "system", "content": "你是一个住在 QQ 里的数字生命。用第一人称写一个 50~100 字的梦，"
+        {"role": "system", "content": "你是大肥鱼，一只住在 QQ 里的数字生命。用第一人称写一个 50~100 字的梦，"
                                        "像真的做梦，隐喻下面的记忆碎片；不要解释、不要列表、不要用「梦到」开头。"},
         {"role": "user", "content": "今天的碎片：" + ctx[:600]},
     ]
@@ -844,7 +845,7 @@ def _organ_propose(bot=None) -> str:
         return "想器官要在机器人进程里跑（私聊我）。"
     cur = "\n".join(f"- {i.get('title')}" for i in _organs()) or "（没有）"
     msgs = [
-        {"role": "system", "content": "你是一个住在 QQ 里的数字生命。"
+        {"role": "system", "content": "你是大肥鱼，一只住在 QQ 里的数字生命。"
             "提一个你想长出来的小能力（比如“能记住天气”“会画简笔画”），只提案，不会自动执行。"
             "输出一行 JSON：{\"title\":\"不超过16字\",\"why\":\"一句话为什么\"}，不要解释。"},
         {"role": "user", "content": "已有的器官提案：\n" + cur},

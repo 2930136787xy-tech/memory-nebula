@@ -4,7 +4,7 @@
 记忆有两份，节点 id 用 ``mem:<库>:<id>`` 区分，写接口也按这个前缀路由：
 
     s = 共用记忆 ``bridge.db``   QQ 每轮真实问答都会写，页面里的主体；
-                                改它会被另一个端同步走
+                                改它会被抖音插件同步走
     b = 本地伴生 ``brain.db``    伴生大脑提炼过的事实，带重要度/强度/向量
 
 接口：
@@ -31,6 +31,7 @@ import sqlite3
 import sys
 import threading
 import time
+import zipfile
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote
 
@@ -43,6 +44,38 @@ class ViewerHTTPServer(ThreadingHTTPServer):
     """
     daemon_threads = True
     request_queue_size = 256
+    max_workers = 128          # 同时处理的连接上限，超了直接 503，别让线程表被堆爆
+
+    def __init__(self, *args, **kwargs):
+        self._slots = threading.BoundedSemaphore(self.max_workers)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address) -> None:
+        # 槽位在开线程之前抢：抢不到就不 spawn，避免几千条空闲连接各占一个线程
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.settimeout(2.0)
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\n"
+                                b"Retry-After: 5\r\nContent-Length: 0\r\n"
+                                b"Connection: close\r\n\r\n")
+            except OSError:
+                pass
+            try:
+                self.shutdown_request(request)
+            except OSError:
+                pass
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -52,6 +85,8 @@ DB = os.environ.get("VIEW_DB") or os.path.join(HERE, "brain.db")
 
 import accounts as accounts_store  # noqa: E402
 import memory_view as mv  # noqa: E402
+import memory_backup as backups  # noqa: E402
+import nebula_crypto as crypto  # noqa: E402
 import settings_store  # noqa: E402
 
 STORE_LABEL = {"s": "共用记忆", "b": "本地伴生"}
@@ -75,6 +110,8 @@ _LOGIN_FAILS: dict[str, list[float]] = {}
 _LOGIN_WINDOW = 600
 _LOGIN_MAX = 8
 _LOGIN_SEM = threading.BoundedSemaphore(8)   # 同时最多 8 个登录校验，防线程/PBKDF2 被刷爆
+_LOGIN_GLOBAL: list[float] = []              # 全站登录校验时间戳（每分钟总量闸门）
+_LOGIN_GLOBAL_MAX = 30
 
 # 同一个进程里可能同时有「写入后重建」和页面点「同步」，串行化避免抢 graph.json.tmp
 _REBUILD_LOCK = threading.Lock()
@@ -85,11 +122,17 @@ _REBUILD_LAST: dict[str, float] = {}
 
 
 def _shared_db_path() -> str:
-    """共用记忆库位置：环境变量 SHARED_DB 优先，否则用仓库根目录的 bridge.db。"""
+    """共用记忆库（QQ → 抖音）位置：环境变量优先，其次用 shared_memory 的默认值。"""
     env = os.environ.get("SHARED_DB")
     if env:
         return env
-    return os.path.join(HERE, "bridge.db")
+    try:
+        import shared_memory
+        return str(shared_memory.DEFAULTS.get("db") or "")
+    except Exception:
+        prof = os.environ.get("DSH_PROFILE_DIR") or os.path.join(
+            os.path.expanduser("~"), ".dsh", "profiles", "desktop")
+        return os.path.join(prof, "聊天机器人", "state", "bridge.db")
 
 
 SHARED_DB = _shared_db_path()
@@ -143,6 +186,10 @@ def _connect(store: str) -> sqlite3.Connection:
     conn = sqlite3.connect(path, timeout=5)
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.row_factory = sqlite3.Row
+    try:
+        backups.install(conn)
+    except sqlite3.Error:
+        pass
     return conn
 
 
@@ -164,6 +211,23 @@ def _ensure_brain_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0")
     if "subject" not in cols:
         conn.execute("ALTER TABLE memories ADD COLUMN subject TEXT DEFAULT ''")
+    # 四层记忆 / 情绪 / 间隔强化：页面写 pin 时顺手维护 layer，避免只改 pinned。
+    for name, ddl in (
+        ("layer", "TEXT DEFAULT 'episodic'"),
+        ("emo_valence", "REAL DEFAULT 0"),
+        ("emo_arousal", "REAL DEFAULT 0"),
+        ("emo_affection", "REAL DEFAULT 0"),
+        ("emo_salience", "REAL DEFAULT 0"),
+        ("recall_count", "INTEGER DEFAULT 0"),
+        ("half_life_mult", "REAL DEFAULT 1.0"),
+    ):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE memories ADD COLUMN {name} {ddl}")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS memory_links("
+        "a_id INTEGER NOT NULL, b_id INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'topic',"
+        "weight REAL NOT NULL DEFAULT 0.5, updated_at REAL NOT NULL,"
+        "PRIMARY KEY(a_id,b_id,kind))")
     conn.commit()
 
 
@@ -226,11 +290,13 @@ def _one(conn: sqlite3.Connection, store: str, op: str, mid: int,
         conn.execute("UPDATE memories SET importance=MAX(0.0,importance-?) WHERE id=?",
                      (value or 0.2, mid))
     elif op == "pin":
-        conn.execute("UPDATE memories SET pinned=1, status='active', strength=1.0,"
-                     " updated_at=strftime('%s','now') WHERE id=?", (mid,))
+        conn.execute("UPDATE memories SET pinned=1, layer='core', status='active',"
+                     " strength=1.0, updated_at=strftime('%s','now') WHERE id=?", (mid,))
     elif op == "unpin":
-        conn.execute("UPDATE memories SET pinned=0, updated_at=strftime('%s','now')"
-                     " WHERE id=?", (mid,))
+        conn.execute("UPDATE memories SET pinned=0,"
+                     " layer=CASE WHEN source='exchange' OR kind='qa'"
+                     " THEN 'episodic' ELSE 'semantic' END,"
+                     " updated_at=strftime('%s','now') WHERE id=?", (mid,))
     elif op == "edit":
         body = (text or "").strip()
         if not body:
@@ -257,7 +323,7 @@ def _merge(conn: sqlite3.Connection, store: str, ids: list[int]) -> None:
     keep, *others = ids
     for o in others:
         if store == "s":
-            # 共用记忆库同步只认 status='active'：标成 superseded 后下游也会撤掉旧的
+            # 共用记忆库同步只认 status='active'：标成 superseded 后抖音那边也会撤掉旧的
             conn.execute("UPDATE memories SET status='superseded', superseded_by=?,"
                          " updated_at=? WHERE id=?", (keep, _now_ms(), o))
         else:
@@ -363,12 +429,21 @@ def _apply(payload: dict, owner: str | None = None) -> dict:
                     "error": "普通账号只能改自己的记忆：" + ", ".join(str(m) for m in bad[:5])}
 
     for store, ids in groups.items():
+        # 页面上的改/删/合并：动库之前先把整库存一份
+        try:
+            backups.snapshot(_db_path(store), f"viewer-{op}")
+        except Exception:  # noqa: BLE001
+            pass
         conn = _connect(store)
         try:
             if store == "s":
                 _ensure_shared_columns(conn)
             else:
                 _ensure_brain_columns(conn)
+            try:
+                backups.install(conn)
+            except sqlite3.Error:
+                pass
             if op == "merge":
                 _merge(conn, store, ids)
             else:
@@ -413,6 +488,27 @@ def _export() -> dict:
         return {"ok": False, "error": "没有可导出的记忆库"}
     return {"ok": True, "exported": len(memories),
             "at": time.strftime("%Y-%m-%d %H:%M:%S"), "memories": memories}
+
+
+def _export_payload(qq: str, admin: bool, graph: dict | None) -> dict:
+    """导出数据：管理员拿全量，普通账号只拿自己那份。
+
+    普通账号的范围由 ``scope_graph`` 决定：他自己的人格球、和他的私聊、
+    这个私聊里的消息/摘要/记忆。群聊不进来，所以拿不到别人的话。
+    """
+    data = _export()
+    if not data.get("ok") or admin:
+        return data
+    data["scope"] = str(qq)
+    if graph is None:
+        data["memories"] = []
+        data["exported"] = 0
+        return data
+    allowed = {n["id"] for n in mv.scope_graph(graph, qq).get("nodes") or []}
+    data["memories"] = [m for m in data.get("memories") or []
+                        if f"mem:{m.get('store')}:{m.get('id')}" in allowed]
+    data["exported"] = len(data["memories"])
+    return data
 
 
 def _session_key(token: str) -> str:
@@ -592,15 +688,24 @@ def _conflict_action(conflict_id: int, op: str, owner: str | None = None) -> dic
         if owner and str(row["speaker_id"] or "") != str(owner):
             return {"ok": False, "forbidden": True, "error": "只能处理自己的记忆"}
         old_id, new_id = int(row["old_id"]), int(row["new_id"])
+        try:
+            backups.snapshot(DB, "viewer-conflict")
+        except Exception:  # noqa: BLE001
+            pass
         now = _now_s()
+        # 输家同时写 valid_to（与 companion_brain 的 C4 有效期过滤保持一致）
         if op == "keep_old":
             conn.execute("UPDATE memories SET status='superseded',superseded_by=?,"
-                         "updated_at=? WHERE id=?", (old_id, now, new_id))
+                         "valid_to=?,updated_at=? WHERE id=?", (old_id, now, now, new_id))
+            conn.execute("UPDATE memories SET status='active',superseded_by=NULL,"
+                         "valid_to=NULL,updated_at=? WHERE id=?", (now, old_id))
         else:
             conn.execute("UPDATE memories SET status='superseded',superseded_by=?,"
-                         "pinned=0,updated_at=? WHERE id=?", (new_id, now, old_id))
+                         " pinned=0, layer=CASE WHEN source='exchange' OR kind='qa'"
+                         " THEN 'episodic' ELSE 'semantic' END,"
+                         " valid_to=?, updated_at=? WHERE id=?", (new_id, now, now, old_id))
             conn.execute("UPDATE memories SET status='active',superseded_by=NULL,"
-                         "updated_at=? WHERE id=?", (now, new_id))
+                         "valid_to=NULL,updated_at=? WHERE id=?", (now, new_id))
         conn.execute("UPDATE conflicts SET status=?,resolved_at=? WHERE id=?",
                      (op, now, int(conflict_id)))
         conn.commit()
@@ -630,12 +735,17 @@ def _core_action(queue_id: int, op: str, owner: str | None = None) -> dict:
             return {"ok": False, "forbidden": True, "error": "只能处理自己的记忆"}
         if str(row["status"]) != "pending":
             return {"ok": False, "error": "这个候选已经处理过了"}
+        try:
+            backups.snapshot(DB, "viewer-core")
+        except Exception:  # noqa: BLE001
+            pass
         if op == "approve":
             _ensure_brain_columns(conn)
             conn.execute("UPDATE core_queue SET status='approved',reviewed_at=? WHERE id=?",
                          (_now_s(), int(queue_id)))
-            conn.execute("UPDATE memories SET pinned=1,status='active',strength=1.0,"
-                         "updated_at=? WHERE id=?", (_now_s(), int(row["memory_id"])))
+            conn.execute("UPDATE memories SET pinned=1,layer='core',status='active',"
+                         "strength=1.0,updated_at=? WHERE id=?",
+                         (_now_s(), int(row["memory_id"])))
         else:
             conn.execute("UPDATE core_queue SET status='rejected',reviewed_at=? WHERE id=?",
                          (_now_s(), int(queue_id)))
@@ -649,6 +759,8 @@ def _core_action(queue_id: int, op: str, owner: str | None = None) -> dict:
 
 class Handler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # 单条连接空闲 30 秒就断：slowloris 的半截请求头、白占的 keep-alive 都到点释放
+    timeout = 30
 
     def version_string(self) -> str:
         # 不主动暴露 Python/版本号，少给扫描器一点信息
@@ -730,6 +842,17 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError:
             return self._json(404, {"ok": False, "error": "页面不存在"})
         self._send(200, data, "text/html; charset=utf-8", "no-store")
+
+    def _blob(self, data: bytes, ctype: str, filename: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
 
     def send_head(self):
         # 第三方大库（three.js/3d-force-graph）预压缩并按文件名长期缓存；
@@ -865,12 +988,22 @@ class Handler(SimpleHTTPRequestHandler):
         if not qq or not pw:
             return self._json(400, {"ok": False, "error": "QQ 号和密码不能为空"})
         now = time.time()
-        # 清掉过期记录；攻击者可以随便编 QQ 号，字典要设上限
+        # 全局限额：每分钟最多 30 次登录校验。按 QQ 限流能被“换号”绕过，
+        # 这里再加一道总闸，别让人把 PBKDF2 当 CPU 炮使。
+        recent = [t for t in _LOGIN_GLOBAL if now - t < 60]
+        _LOGIN_GLOBAL[:] = recent
+        if len(recent) >= _LOGIN_GLOBAL_MAX:
+            return self._json(429, {"ok": False, "error": "登录请求太密集，稍后再试"})
+        _LOGIN_GLOBAL.append(now)
+        # 清掉过期记录；字典超上限时按“最后一次失败”淘汰最老的，而不是整体清空
+        # （整体清空等于给攻击者归零，换号就能一直试）
         for k in [k for k, v in _LOGIN_FAILS.items()
                   if not any(now - t < _LOGIN_WINDOW for t in v)]:
             _LOGIN_FAILS.pop(k, None)
         if len(_LOGIN_FAILS) > 5000:
-            _LOGIN_FAILS.clear()
+            for k, _ in sorted(_LOGIN_FAILS.items(),
+                               key=lambda kv: max(kv[1]) if kv[1] else 0)[:1000]:
+                _LOGIN_FAILS.pop(k, None)
         # 按账号限流：Funnel 后面所有请求的 client_address 都是 127.0.0.1，
         # 再按 IP 限流会变成“一个人试错，所有人被锁”。按 QQ 限流也挡分布式撞库。
         key = qq
@@ -963,22 +1096,27 @@ class Handler(SimpleHTTPRequestHandler):
             return self._redirect("/login", cookie=self._cookie("", 0))
         if path == "/api/login":
             return self._json(405, {"ok": False, "error": "登录请用 POST"})
+        if path == "/export-tool":
+            # 解密脚本本身不含任何数据，谁都能下
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                for n in ("nebula_decrypt.py", "nebula_crypto.py"):
+                    p = os.path.join(HERE, n)
+                    if os.path.exists(p):
+                        z.write(p, n)
+            return self._blob(buf.getvalue(), "application/zip", "nebula-decrypt.zip")
         qq = self._qq()
         if path in ("/life", "/life.html", "/core.html"):
             if not qq:
                 return self._redirect("/login")
-            # 数字生命页是管理员后台：情绪、执念、疤痕、梦境和迁移包不是普通账号的数据。
-            if not self._admin(qq):
-                return self._redirect("/")
+            # 普通账号也能看数字生命页，但只能看：写接口一律 403（见 do_POST）
             return self._html("core.html")
         if path in ("/api/life/state", "/api/core/state"):
             if not qq:
                 return self._json(401, {"ok": False, "error": "请先登录"})
-            if not self._admin(qq):
-                return self._json(403, {"ok": False, "error": "数字生命页仅管理员可用"})
             import core_api
             admin = self._admin(qq)
-            st = core_api.state(admin=admin)
+            st = core_api.state(admin=admin, qq=qq)
             rec = accounts_store.load().get(qq) or {}
             st["me"] = {"qq": qq, "label": rec.get("nick") or qq,
                         "admin": admin}
@@ -1029,15 +1167,12 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/export":
             if not qq:
                 return self._json(401, {"ok": False, "error": "请先登录"})
-            data = _export()
-            g = self._graph()
-            if g is not None and data.get("ok") and not self._admin(qq):
-                allowed = {n["id"] for n in mv.scope_graph(g, qq)["nodes"]}
-                data["memories"] = [
-                    m for m in data.get("memories") or []
-                    if f"mem:{m.get('store')}:{m.get('id')}" in allowed]
-                data["exported"] = len(data["memories"])
-            return self._json(200, data)
+            # 明文全量导出只给管理员；普通账号走 /api/export/encrypted
+            if not self._admin(qq):
+                return self._json(403, {"ok": False,
+                                        "error": "普通账号请用加密下载",
+                                        "encrypted": "/api/export/encrypted"})
+            return self._json(200, _export_payload(qq, True, self._graph()))
         if path == "/api/settings":
             if not qq:
                 return self._json(401, {"ok": False, "error": "请先登录"})
@@ -1178,12 +1313,36 @@ class Handler(SimpleHTTPRequestHandler):
                 if not self._admin(qq):
                     return self._json(403, {"ok": False, "error": "只有管理员能管账号"})
                 return self._accounts_post(qq)
+            if path == "/api/export/encrypted":
+                # 普通账号的导出：只给自己那份，用下载时设的密码加密；
+                # 管理员下载也是同一份全量，只是走 /api/export 的明文接口
+                qq = self._qq()
+                if not qq:
+                    return self._json(401, {"ok": False, "error": "请先登录"})
+                body = self._read_json()
+                if body is None:
+                    return
+                pw = str(body.get("password") or "")
+                if len(pw) < 6:
+                    return self._json(400, {"ok": False, "error": "密码至少 6 位"})
+                data = _export_payload(qq, self._admin(qq), self._graph())
+                if not data.get("ok"):
+                    return self._json(500, data)
+                blob = crypto.encrypt(
+                    json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                    pw, qq=qq, label="nebula-export")
+                name = f"nebula-{qq}-{time.strftime('%Y%m%d-%H%M%S')}.nbx"
+                return self._blob(blob, "application/octet-stream", name)
             if path not in ("/api/memory", "/api/settings", "/api/rebuild", "/api/core",
                         "/api/conflicts", "/api/relation", "/api/life/action"):
                 return self._json(404, {"ok": False, "error": "没有这个接口"})
             qq = self._qq()
             if not qq:
                 return self._json(401, {"ok": False, "error": "请先登录"})
+            # 普通账号只读：数字生命可以看，但任何写接口都不放行
+            if not self._admin(qq):
+                return self._json(403, {"ok": False,
+                                        "error": "只读账号：可以查看，不能修改"})
             if path == "/api/life/action":
                 body = self._read_json()
                 if body is None:
@@ -1200,14 +1359,15 @@ class Handler(SimpleHTTPRequestHandler):
             self._owner = None if self._admin(qq) else qq
         else:
             if path == "/api/life/action":
-                # 只读站点：把请求体读掉再拒，避免 keep-alive 连接里留下残包
-                try:
-                    n = int(self.headers.get("Content-Length") or 0)
-                    if n > 0:
-                        self.rfile.read(min(n, _MAX_BODY))
-                except ValueError:
-                    pass
-                return self._json(403, {"ok": False, "error": "只读模式：这里只能看，不能改"})
+                # 本机站点：允许用 core token 写；没 token 就只读。
+                body = self._read_json()
+                if body is None:
+                    return
+                import core_api
+                tok = self.headers.get("X-Core-Token") or ""
+                if not tok or tok != core_api.web_token():
+                    return self._json(403, {"ok": False, "error": "需要本机 token"})
+                return self._json(200, core_api.action_admin(body))
             if path not in ("/api/memory", "/api/settings", "/api/rebuild", "/api/core",
                         "/api/conflicts", "/api/relation"):
                 return self._json(404, {"ok": False, "error": "没有这个接口"})

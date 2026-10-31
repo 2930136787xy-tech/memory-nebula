@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import sys
@@ -26,7 +27,7 @@ import time
 from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.environ.get("NEBULA_DATA") or os.path.join(HERE, "data")
+DATA = os.path.join(HERE, "data")
 WEB = os.path.join(HERE, "web")
 DB = os.environ.get("VIEW_DB") or os.path.join(HERE, "brain.db")
 CORE_ID = "core:system"
@@ -47,15 +48,17 @@ KNOWN_MIN_MEMORIES = 10      # 或在这份关系里留下至少 10 条记忆
 
 
 def _shared_db_path() -> str:
-    """共用记忆库的位置：环境变量 SHARED_DB 优先，否则用仓库根目录的 bridge.db。
-
-    原项目里这份库由 QQ 机器人实时写入；独立运行时把它放在仓库根目录，
-    `python demo/make_demo.py` 会生成一份可直接出图的示例库。
-    """
+    """共用记忆库（QQ → 抖音）的位置：环境变量优先，其次用 shared_memory 的默认值。"""
     env = os.environ.get("SHARED_DB")
     if env:
         return env
-    return os.path.join(HERE, "bridge.db")
+    try:
+        import shared_memory
+        return str(shared_memory.DEFAULTS.get("db") or "")
+    except Exception:
+        prof = os.environ.get("DSH_PROFILE_DIR") or os.path.join(
+            os.path.expanduser("~"), ".dsh", "profiles", "desktop")
+        return os.path.join(prof, "聊天机器人", "state", "bridge.db")
 
 
 SHARED_DB = _shared_db_path()
@@ -68,6 +71,7 @@ NODE_TYPES: dict[str, dict[str, Any]] = {
     "day": {"color": "#9b8cff", "size": 5, "label": "日期"},
     "msg": {"color": "#58d68d", "size": 2.6, "label": "消息"},
     "summary": {"color": "#2dd4bf", "size": 4.5, "label": "日摘要"},
+    "digest": {"color": "#7dd3fc", "size": 4.2, "label": "长期摘要"},
     "memory": {"color": "#ffb84d", "size": 5, "label": "记忆"},
 }
 # 永久记忆单独用一个颜色，和「更快忘 / 更难忘」的明暗区分开
@@ -98,12 +102,35 @@ def _write_json_atomic(path: str, data: Any) -> None:
 
 
 def _strength_now(m: dict, now: float) -> float:
-    """与 companion_brain.Brain._strength 同一公式：越重要忘得越慢。"""
+    """与 companion_brain.Brain._strength 同一公式：重要度 + 间隔强化 + 情绪显著度。"""
     base = float(m.get("strength") or 1.0)
-    imp = float(m.get("importance") or 0.5)
-    days = max(0.0, (now - float(m.get("updated_at") or now)) / 86400.0)
+    imp = max(0.0, min(1.0, float(m.get("importance") or 0.5)))
+    anchor = float(m.get("updated_at") or now)
+    try:
+        anchor = max(anchor, float(m.get("last_access_at") or 0))
+    except (TypeError, ValueError):
+        pass
+    days = max(0.0, (now - anchor) / 86400.0)
     half_life = 7.0 + 83.0 * imp
-    return base * (0.5 ** (days / half_life))
+    half_life *= 1.0 + 0.55 * math.log1p(max(0, int(m.get("recall_count") or 0)))
+    half_life *= 1.0 + 0.60 * max(0.0, min(1.0, float(m.get("emo_salience") or 0.0)))
+    try:
+        mult = max(0.25, min(6.0, float(m.get("half_life_mult") or 1.0)))
+    except (TypeError, ValueError):
+        mult = 1.0
+    half_life *= mult
+    return base * (0.5 ** (days / max(1.0, half_life)))
+
+
+LAYER_LABEL = {"core": "核心", "semantic": "语义", "episodic": "情景"}
+
+
+def _layer_of(m: dict) -> str:
+    """pinned 永远按核心算，和 companion_brain 的生效层保持一致。"""
+    if m.get("pinned"):
+        return "core"
+    lay = str(m.get("layer") or "")
+    return lay if lay in LAYER_LABEL else "episodic"
 
 
 def _num(value: Any, default: float) -> float:
@@ -333,24 +360,22 @@ def _ring_of(qq: str, admins: list[str], known: set[str]) -> str:
 RING_LABEL = {"core": "核心", "inner": "熟识", "outer": "陌生"}
 
 
-def _load_brain() -> tuple[list[dict], dict[str, list[float]], dict[str, dict]]:
-    """返回（记忆, 向量, 各说话人情绪）。库不存在就返回空，不报错。"""
+def _load_brain() -> tuple[list[dict], dict[str, list[float]], dict[str, dict],
+                           list[dict], list[dict]]:
+    """返回（记忆, 向量, 各说话人情绪, 长期摘要, 联想边）。库不存在就返回空，不报错。"""
     mems: list[dict] = []
     vecs: dict[str, list[float]] = {}
     moods: dict[str, dict] = {}
+    digests: list[dict] = []
+    links: list[dict] = []
     if not os.path.exists(DB):
-        return mems, vecs, moods
+        return mems, vecs, moods, digests, links
     try:
         conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=3)
         conn.row_factory = sqlite3.Row
-        # pinned 是后加的列，老库可能还没有：先探测，避免 SELECT 整个失败
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(memories)")}
-        pin_col = "pinned" if "pinned" in cols else "0 AS pinned"
-        for r in conn.execute(
-                "SELECT id,speaker_id,kind,content,importance,confidence,strength,"
-                "created_at,updated_at,status,source,superseded_by,access_count,"
-                + pin_col +
-                " FROM memories ORDER BY id DESC LIMIT 800"):
+        # 新列（layer/emo_*/recall_count/half_life_mult）在老库里可能还没有，
+        # 直接 SELECT * 再按缺省值读，避免列名探测漏掉未来的迁移。
+        for r in conn.execute("SELECT * FROM memories ORDER BY id DESC LIMIT 800"):
             mems.append(dict(r))
         try:
             for r in conn.execute("SELECT memory_id,vec,dim FROM embeddings"):
@@ -366,10 +391,22 @@ def _load_brain() -> tuple[list[dict], dict[str, list[float]], dict[str, dict]]:
                                                "f": r["affection"]}
         except Exception:
             pass
+        try:
+            for r in conn.execute(
+                    "SELECT * FROM memory_digests ORDER BY id DESC LIMIT 300"):
+                digests.append(dict(r))
+        except Exception:
+            pass
+        try:
+            for r in conn.execute(
+                    "SELECT a_id,b_id,kind,weight FROM memory_links LIMIT 5000"):
+                links.append(dict(r))
+        except Exception:
+            pass
         conn.close()
     except Exception:
         pass
-    return mems, vecs, moods
+    return mems, vecs, moods, digests, links
 
 
 VEC_CACHE = os.path.join(DATA, "vectors-cache.json")
@@ -378,7 +415,7 @@ VEC_CACHE = os.path.join(DATA, "vectors-cache.json")
 def _load_shared() -> list[dict]:
     """共用记忆库（bridge.db）里的问答。
 
-    这是 QQ 机器人每轮真实对话都写进去的那份，也是另一个端同步的「QQ 记忆库」。
+    这是 QQ 机器人每轮真实对话都写进去的那份，也是抖音插件同步的「QQ 记忆库」。
     只读打开，库不在、表不在、被锁住都当没有，不影响出图。
     """
     out: list[dict] = []
@@ -406,11 +443,7 @@ def _summary_vectors(items: list[tuple[str, str]]) -> dict[str, list[float]]:
     import hashlib
     from array import array
 
-    try:
-        import companion_brain as cb
-    except Exception:
-        # 独立运行（没有向量后端）时仍然可以用缓存里的旧向量，但不再新算。
-        cb = None
+    import companion_brain as cb
 
     def pack(v: list[float]) -> str:
         return base64.b64encode(array("f", v).tobytes()).decode("ascii")
@@ -437,7 +470,7 @@ def _summary_vectors(items: list[tuple[str, str]]) -> dict[str, list[float]]:
                 out[sid] = vec
                 continue
         todo.append((sid, text, key))
-    if todo and cb is not None:
+    if todo:
         try:
             brain = cb.Brain(":memory:", "view")
             vecs = brain._cloud_embed([t[:400] for _, t, _ in todo])
@@ -461,15 +494,7 @@ def _semantic_links(vecmap: dict[str, list[float]], threshold: float = 0.15,
       精算：粗排过线的才算 1024 维完整余弦
     摘要参与的全部比；记忆↔记忆只比最近的 mem_limit 条，避免边爆炸。
     """
-    try:
-        from companion_brain import _cos
-    except Exception:
-        def _cos(a, b):  # 独立运行：用同样的余弦口径，不依赖向量后端
-            n = min(len(a), len(b))
-            dot = sum(a[i] * b[i] for i in range(n))
-            na = sum(x * x for x in a[:n]) ** 0.5
-            nb = sum(x * x for x in b[:n]) ** 0.5
-            return dot / (na * nb) if na and nb else 0.0
+    from companion_brain import _cos
 
     ids = list(vecmap)
     coarse = {k: v[::8] for k, v in vecmap.items()}
@@ -503,7 +528,7 @@ def build() -> dict:
     nicks = _load_nicks()
     admins, backend = _load_core_config()
     admin_nicks = [nicks.get(qq) or "" for qq in admins]
-    mems, vecs, moods = _load_brain()
+    mems, vecs, moods, digests, db_links = _load_brain()
     shared = _load_shared()
     known = _known_people(hist, shared, mems, admins, nicks)
     manual_known = _known_from_config()
@@ -657,6 +682,7 @@ def build() -> dict:
         c_reason = _core_reason(body, spk, conv_key, admins, admin_nicks)
         c_core = bool(c_reason)
         m_ring = "core" if c_core else _ring_of(spk, admins, known)
+        m_layer = "core" if pinned else "episodic"   # 共用记忆是逐轮问答，落在情景层
         add({"id": sid, "type": "memory", "store": "s", "label": label[:28],
              "text": body, "qa": "\n" in body, "fact": subject,
              "conv": conv_key,
@@ -665,6 +691,7 @@ def build() -> dict:
              "origin": "qq", "status": status, "pinned": pinned,
              "core_related": c_core, "core_reason": c_reason,
              "known": spk in known, "ring": m_ring, "ring_label": RING_LABEL[m_ring],
+             "layer": m_layer, "layer_label": LAYER_LABEL.get(m_layer, m_layer),
              "superseded_by": m.get("superseded_by"),
              "created": ts_new or None, "updated": ts_up or ts_new or None,
              "access": None, "strength": round(strength, 3),
@@ -698,6 +725,7 @@ def build() -> dict:
         _c_reason = _core_reason(_body, _spk, _conv, admins, admin_nicks)
         _c_core = bool(_c_reason)
         _ring = "core" if _c_core else _ring_of(_spk, admins, known)
+        _layer = _layer_of(m)
         add({"id": mid, "type": "memory", "store": "b", "label": _first[:28],
              "text": _body, "qa": len(_lines) > 1, "fact": _fact,
              "importance": _imp,
@@ -706,10 +734,19 @@ def build() -> dict:
              "origin": m.get("source") or "",
              "core_related": _c_core, "core_reason": _c_reason,
              "known": _spk in known, "ring": _ring, "ring_label": RING_LABEL[_ring],
+             "layer": _layer, "layer_label": LAYER_LABEL.get(_layer, _layer),
+             "emotion": ({"v": round(float(m.get("emo_valence") or 0), 2),
+                          "a": round(float(m.get("emo_arousal") or 0), 2),
+                          "salience": round(float(m.get("emo_salience") or 0), 2)}
+                         if float(m.get("emo_salience") or 0) > 0 else None),
+             "recall_count": int(m.get("recall_count") or 0),
+             "half_life": round(7.0 + 83.0 * _imp, 1),
              "status": m.get("status") or "active", "pinned": _pinned,
              "superseded_by": m.get("superseded_by"),
+             # C4 有效期：面板据此显示「已过期」，召回也按它过滤
+             "valid_to": m.get("valid_to"),
              "created": m.get("created_at"), "updated": m["updated_at"],
-             "access": m["access_count"], "strength": round(strength, 3),
+             "access": m.get("access_count"), "strength": round(strength, 3),
              "color": PIN_COLOR if _pinned else None,
              "size": NODE_TYPES["memory"]["size"] + 4 * _imp + (1.5 if _pinned else 0)})
         spk = str(m["speaker_id"])
@@ -724,6 +761,41 @@ def build() -> dict:
                 sup_pairs.append((m["id"], int(nb), "b"))
             except (TypeError, ValueError):
                 pass
+
+    # 4.5) 长期摘要（日/周/月）：归纳压缩的产物，单独成球并连回来源
+    digest_levels = {"daily": "日摘要", "weekly": "周摘要", "monthly": "月摘要"}
+    for d in sorted(digests, key=lambda x: int(x.get("id") or 0)):
+        body = str(d.get("content") or "").strip()
+        if not body:
+            continue
+        did = f"dig:{d['id']}"
+        level = str(d.get("level") or "daily")
+        spk = str(d.get("speaker_id") or "")
+        aud = str(d.get("audience") or "")
+        c_reason = _core_reason(body, spk, aud, admins, admin_nicks)
+        c_core = bool(c_reason)
+        ring = "core" if c_core else _ring_of(spk, admins, known)
+        add({"id": did, "type": "digest", "label": body[:26], "text": body,
+             "level": level, "level_label": digest_levels.get(level, level),
+             "period": f"{d.get('period_start') or ''}~{d.get('period_end') or ''}",
+             "speaker": spk, "audience": aud, "model": d.get("model") or "",
+             "core_related": c_core, "core_reason": c_reason,
+             "ring": ring, "ring_label": RING_LABEL[ring],
+             "created": d.get("created_at"),
+             "size": NODE_TYPES["digest"]["size"] + (1.2 if level != "daily" else 0)})
+        if aud in conv_set:
+            links.append({"source": did, "target": f"conv:{aud}", "kind": "digest"})
+        elif spk and f"persona:{spk}" in seen:
+            links.append({"source": did, "target": f"persona:{spk}", "kind": "digest"})
+        try:
+            source_ids = json.loads(d.get("source_ids") or "[]")
+        except (TypeError, ValueError):
+            source_ids = []
+        for sid in source_ids if isinstance(source_ids, list) else []:
+            for cand in (f"mem:b:{sid}", f"dig:{sid}"):
+                if cand in seen:
+                    links.append({"source": did, "target": cand, "kind": "digest"})
+                    break
 
     for old, new, store in sup_pairs:
         old_id, new_id = f"mem:{store}:{old}", f"mem:{store}:{new}"
@@ -741,19 +813,33 @@ def build() -> dict:
     if sem_on:
         pairs = [(n["id"], n.get("text") or "") for n in nodes if n["type"] == "summary"]
         if pairs:
-            try:
-                vecmap.update(_summary_vectors(pairs))
-            except Exception as e:  # 向量后端不可用就只画结构边
-                print(f"  语义边跳过：{type(e).__name__}", file=sys.stderr)
+            vecmap.update(_summary_vectors(pairs))
         for mid, v in vecs.items():
             if f"mem:b:{mid}" in seen:
                 vecmap[f"mem:b:{mid}"] = v
-        try:
-            sem = _semantic_links(vecmap)
-        except Exception:
-            sem = []
+        sem = _semantic_links(vecmap)
     links.extend(sem)
-    meta_extra = {"semantic_edges": len(sem), "vectors": len(vecmap)}
+    # 5.5) 差序联想边：夜间算出的记忆↔记忆共现/同主题关系，最多画 600 条
+    assoc: list[dict] = []
+    try:
+        import settings_store
+        assoc_on = settings_store.on("recall.assoc", True)
+    except Exception:
+        assoc_on = True
+    if assoc_on:
+        pairs = []
+        for l in db_links:
+            a = f"mem:b:{l.get('a_id')}"
+            b = f"mem:b:{l.get('b_id')}"
+            if a in seen and b in seen:
+                pairs.append((float(l.get("weight") or 0.5), a, b))
+        pairs.sort(reverse=True)
+        for weight, a, b in pairs[:600]:
+            assoc.append({"source": a, "target": b, "kind": "assoc",
+                          "weight": round(weight, 3)})
+    links.extend(assoc)
+    meta_extra = {"semantic_edges": len(sem), "vectors": len(vecmap),
+                  "assoc_edges": len(assoc)}
 
     meta = {
         "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -799,6 +885,18 @@ def build() -> dict:
     meta["sources"]["语义边"] = meta_extra["semantic_edges"]
     meta["sources"]["向量"] = meta_extra["vectors"]
     meta["sources"]["永久"] = sum(1 for n in nodes if n.get("pinned"))
+    meta["sources"]["长期摘要"] = meta["counts"].get("digest", 0)
+    meta["sources"]["联想边"] = meta_extra["assoc_edges"]
+    meta["layers"] = {
+        lay: sum(1 for n in nodes
+                 if n.get("type") == "memory" and n.get("layer") == lay)
+        for lay in ("core", "semantic", "episodic")
+    }
+    meta["digests"] = {
+        lvl: sum(1 for n in nodes
+                 if n.get("type") == "digest" and n.get("level") == lvl)
+        for lvl in ("daily", "weekly", "monthly")
+    }
 
     # 「只看某个人」用的名单：QQ 号 + 昵称 + 各类数量
     people: dict[str, dict] = {}
@@ -830,6 +928,15 @@ def build() -> dict:
             if p:
                 p["memories"] += 1
     meta["people"] = sorted(people.values(), key=lambda p: (-p["memories"], p["qq"]))
+    # 把关系圈层快照写给伴生大脑（差序加权召回读 data/rings.json）
+    try:
+        _write_json_atomic(os.path.join(DATA, "rings.json"), {
+            "updated": time.strftime("%Y-%m-%d %H:%M:%S"),
+            **{p["qq"]: {"ring": p["ring"], "known": bool(p.get("known"))}
+               for p in meta["people"]},
+        })
+    except Exception:
+        pass
     return {"nodes": nodes, "links": links, "meta": meta}
 
 
@@ -948,6 +1055,18 @@ def scope_graph(g: dict, qq: str) -> dict:
         "外围记忆": sum(1 for n in out_nodes
                         if n.get("type") == "memory" and not n.get("core_related")),
         "语义边": sem,
+        "长期摘要": counts.get("digest", 0),
+        "联想边": sum(1 for l in out_links if l.get("kind") == "assoc"),
+    }
+    meta["layers"] = {
+        lay: sum(1 for n in out_nodes
+                 if n.get("type") == "memory" and n.get("layer") == lay)
+        for lay in ("core", "semantic", "episodic")
+    }
+    meta["digests"] = {
+        lvl: sum(1 for n in out_nodes
+                 if n.get("type") == "digest" and n.get("level") == lvl)
+        for lvl in ("daily", "weekly", "monthly")
     }
     meta["rings"] = {
         r: sum(1 for n in out_nodes if n.get("ring") == r)
@@ -970,6 +1089,7 @@ _REDACT_LABELS = {
     "conv": "别人的会话",
     "msg": "别人的消息",
     "summary": "别人的摘要",
+    "digest": "别人的长期摘要",
     "memory": "别人的记忆",
 }
 
@@ -994,7 +1114,7 @@ def overview_graph(g: dict, qq: str) -> dict:
                 n["redacted"] = True
                 # 正文、提炼出的事实、原始字段都不能留：它们在别的视图里就是内容
                 for key in ("text", "fact", "body", "content", "subject",
-                            "admins", "core_reason", "known_labels"):
+                            "admins", "core_reason", "known_labels", "emotion"):
                     n.pop(key, None)
                 n["label"] = _REDACT_LABELS[n["type"]]
         nodes.append(n)
@@ -1002,9 +1122,6 @@ def overview_graph(g: dict, qq: str) -> dict:
     meta["redacted"] = True
     # 普通账号/访客不需要管理员名单；核心球保留，但 meta.core 里的账号信息不返回。
     meta["core"] = {}
-    # 「看谁」下拉只列自己：别人的昵称也属于个人信息，访客一个都不给。
-    meta["people"] = [p for p in (meta.get("people") or [])
-                      if qq and str(p.get("qq")) == str(qq)]
     meta["scope"] = dict((own.get("meta") or {}).get("scope") or {"qq": qq})
     return {"nodes": nodes, "links": list(g.get("links") or []), "meta": meta}
 
