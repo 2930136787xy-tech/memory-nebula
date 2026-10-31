@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0b1020">
 <link rel="icon" href="data:,">
 <link rel="preload" as="script" href="vendor/3d-force-graph.min.js?v=2">
-<title>记忆星云 · Memory Nebula</title>
+<title>大肥鱼的记忆星云</title>
 <style>
   :root{--bg:#0b1020;--panel:rgba(12,16,28,.86);--line:rgba(120,160,255,.16);
     --text:#e8edf7;--dim:#8a96ad;--accent:#4da3ff}
@@ -328,6 +328,7 @@
      title="打开账号登录/管理（独立 8767 端口）">账号登录</a>
   <button class="btn" id="timebtn">时间轴</button>
   <button class="btn" id="batchbtn">多选</button>
+  <a class="btn" href="life" title="数字生命：激素、执念、疤痕、梦">数字生命</a>
   <button class="btn" id="modebtn" title="切换到星云展示：散开、自动转动、光点在关系上脉冲；只影响画面，不改数据">星云模式</button>
   <button class="btn" id="exportbtn">导出</button>
   <button class="btn" id="corebtn" title="重要或常被想起、但还没定成永久的记忆；批准后变永久">核心候选</button>
@@ -337,7 +338,6 @@
     <button class="btn" id="home" title="把镜头拉回图的中心（快捷键 Home 或 0）">回中心</button>
     <button class="btn" id="syncbtn" title="立即从数据库重建 graph.json（不用等 30 分钟的计划任务）">同步</button>
   <a class="btn" href="settings.html" target="_blank" rel="noopener">开关</a>
-  <a class="btn" href="life" title="数字生命：激素、执念、疤痕、梦">数字生命</a>
   <div class="drawerhint">单指旋转 · 双指缩放/平移 · 点球看详情<br>别人的球只看概况，不能改；「筛选颜色」在图左下角</div>
   </div>
 </header>
@@ -472,6 +472,8 @@ function baseLinkColor(l){
   if (l.kind === 'relation') return 'rgba(255,184,120,.75)';
   if (l.kind === 'owns') return 'rgba(255,120,170,.85)';
   if (l.kind === 'semantic') return 'rgba(100,235,210,.88)';
+  if (l.kind === 'assoc') return 'rgba(255,210,130,.52)';
+  if (l.kind === 'digest') return 'rgba(125,211,252,.55)';
   if (l.kind === 'superseded') return 'rgba(255,150,90,.9)';
   if (l.kind === 'active') return 'rgba(165,150,255,.7)';
   if (l.kind === 'in') return 'rgba(125,190,255,.8)';      // 消息 → 会话（主干线）
@@ -486,6 +488,8 @@ function linkColorFor(l){
   if (l.kind === 'relation') return 'rgba(255,196,130,.90)';
   if (l.kind === 'owns') return 'rgba(255,140,185,.90)';
   if (l.kind === 'semantic') return 'rgba(120,245,220,.95)';
+  if (l.kind === 'assoc') return 'rgba(255,225,160,.68)';
+  if (l.kind === 'digest') return 'rgba(150,220,255,.70)';
   if (l.kind === 'superseded') return 'rgba(255,165,110,.95)';
   if (l.kind === 'active') return 'rgba(180,165,255,.85)';
   if (l.kind === 'in') return 'rgba(140,200,255,.90)';
@@ -500,6 +504,8 @@ function baseLinkWidth(l){
   if (l.kind === 'owns') return 4.8;
   if (l.kind === 'superseded') return 5.4;
   if (l.kind === 'semantic') return 4.2;
+  if (l.kind === 'assoc') return 2.2;
+  if (l.kind === 'digest') return 2.6;
   if (l.kind === 'active') return 3.6;
   if (l.kind === 'in') return 3.4;
   if (l.kind === 'about') return 3.0;
@@ -782,7 +788,8 @@ const TYPE_DESC = {
   day: '一个日期。只和会话、日摘要相连，用来把同一天发生的事串起来。',
   msg: '一条消息：对方说的或我说的。绿色小球数量最多，大小都一样，只是位置跟着所属会话跑。',
   summary: '一天的聊天摘要：把当天几十条消息压成一小段。青色球比消息大，因为它代表“一整天”。',
-  memory: '一条记忆：一整轮「对方问 + 我答」。橙色球，数量最多；会随遗忘变灰。主体来自共用记忆（bridge.db，QQ 每轮问答都写、下游也在读），点开会标明是「共用记忆」还是「本地伴生」。多选就是选它们。标记成「永久」的记忆是紫红色，不会被忘掉。'
+  digest: '长期摘要：夜间把同一个人最重要的几条记忆归纳成的日/周/月摘要。浅蓝色球；点开能看到覆盖时段和是模型归纳还是抽取拼接，细蓝线连回来源记忆。',
+  memory: '大肥鱼的一条记忆：一整轮「对方问 + 我答」。橙色球，数量最多；会随遗忘变灰。主体来自共用记忆（bridge.db，QQ 每轮问答都写、抖音也在读），点开会标明是「共用记忆」还是「本地伴生」。多选就是选它们。标记成「永久」的记忆是紫红色，不会被忘掉。'
 };
 const LINK_DESC = [
   ['核心 → 管理员/会话', 'rgba(255,209,102,.82)', 'core', '系统核心与 QQ 管理员、管理员会话的关系线；这些节点在核心圈。'],
@@ -792,6 +799,8 @@ const LINK_DESC = [
   ['日期 → 摘要', 'rgba(150,190,255,.45)', 'on', '这份摘要属于哪一天。'],
   ['会话 → 日期', 'rgba(165,150,255,.7)', 'active', '这个会话在那天活跃过，线上有紫色流动粒子。'],
   ['语义相近', 'rgba(100,235,210,.88)', 'semantic', '两段文字意思接近（云端向量余弦相似度过线）。摘要↔摘要、摘要↔记忆、记忆↔记忆之间才会出现，青色细线 + 青色粒子。'],
+  ['联想', 'rgba(255,210,130,.52)', 'assoc', '夜间按“同主题 / 字面相近”连起来的记忆↔记忆边，每个点最多 6 条。召回时想起一条，会沿这条边再带出最多两条，这就是差序联想。'],
+  ['长期摘要来源', 'rgba(125,211,252,.55)', 'digest', '长期摘要（日/周/月）连回它归纳的来源记忆或下一层摘要。'],
   ['被替代', 'rgba(255,150,90,.9)', 'superseded', '旧记忆已经被新记忆取代，橙色线从旧的指向新的。'],
   ['人格拥有', 'rgba(255,120,170,.85)', 'owns', '这个人格对应哪个会话，粉色线。'],
   ['归属光流', 'rgba(160,190,255,.34)', 'orbit', '只在星云模式出现：人格/会话指向核心的归属路径，线保留为淡蓝色，光点缓慢流向核心并脉冲，表示它属于这片星系。']
@@ -823,7 +832,7 @@ function renderHelp(meta){
 
     <h3>二、球的大小 = 重要度（0 ~ 1）</h3>
     <ul>
-      <li>球越大，这条数据在记忆主人心里越重要。大小是<b>相对</b>的：核心球 18、人格球 11、会话球 8、摘要球 4.5、记忆球 5、消息球 2.6，再按各自重要度放大。</li>
+      <li>球越大，这条数据在大肥鱼心里越重要。大小是<b>相对</b>的：核心球 18、人格球 11、会话球 8、摘要球 4.5、记忆球 5、消息球 2.6，再按各自重要度放大。</li>
       <li>重要度从哪来：抽取记忆时判定（比如“用户的名字”“明确偏好”会给高分），也可以你手动改——点开记忆球，按 <b>更重要 / 更不重要</b>，每次 ±0.2。</li>
       <li>重要度还会影响遗忘速度（见下一条），所以调大不只是“变大”，也等于“记得更久”。</li>
       <li><b>永久记忆</b>：点开记忆球按「永久记住」（或在多选里按「永久」），它会变成<b>紫红色</b>、永远满亮，不再受遗忘影响；每次对话都会把它放进提示词，相当于写进这个人的档案。再按一次「取消永久」恢复普通记忆。</li>
@@ -855,7 +864,7 @@ function renderHelp(meta){
       <li><b>时间轴</b>：拖两个滑块按时间过滤。<b>搜索</b>：按正文/名字/说话人过滤。<b>看谁</b>：下拉选一个人，只留下他的会话、消息、记忆和摘要（记忆太多时用这个）。<b>多选</b>：进入后点<b>橙色记忆球</b>加入选择（其他球没有可批量改的字段，点了会提示）；底部批量条有「全选 / 更重要 / 更不重要 / 永久 / 忘掉 / 删除 / 合并 / 取消」，「全选」会选中当前筛选后所有可见的记忆球。</li>
       <li><b>同步</b>：立刻按数据库重建 <code>graph.json</code> 并重新读入，不用等 30 分钟的计划任务（新聊出来的记忆马上能看到）。</li>
       <li><b>只读模式</b>：如果页面顶栏出现「只读」，说明服务是给别人看的，所有修改按钮都被藏起来，服务端也会拒绝写入——只能看、搜、筛、导出。</li>
-      <li><b>导出</b>：下载全部记忆的 JSON（含共用记忆和本地伴生）。<b>开关</b>：打开能力总开关页，对所有对话生效。</li>
+      <li><b>导出</b>：管理员下载全部记忆的 JSON；普通账号只能下载<b>自己那份</b>，而且要设密码加密（<code>.nbx</code>，用 <code>nebula_decrypt.py</code> 解开）。<b>开关</b>：打开能力总开关页，对所有对话生效。</li>
       <li>左下角图例里的类型和标签可以点，点一下隐藏/显示那一类。</li>
     </ul>
 
@@ -908,10 +917,11 @@ function renderHelp(meta){
       <li><b>回复不是套模板</b>，每次都是现拼的。顺序（<code>bot.py</code>）：
         <ol>
           <li>按 QQ 号取人格 → <code>system_prompt(当前消息, QQ, 昵称)</code>：人格 + 形象 + 自我介绍规则 + 工具说明；</li>
-          <li>加上长期记忆 <code>memory_text(会话)</code>（就是这个页面里橙色的记忆球）；</li>
+          <li>加上伴生大脑 <code>block_for_prompt</code>：核心关系、情绪/小本本、月/周/日长期摘要、按层召回的【想起来的】；</li>
+          <li>加上长期记忆 <code>memory_text(会话)</code>（就是这个页面里青色的日摘要球）；</li>
           <li>加上事实卡 <code>facts_text(说话人, 当前消息)</code>（按当前这句话去召回，不是全量塞）；</li>
           <li>加上旧对话检索 <code>archive_context(当前消息, 会话)</code>；</li>
-          <li>加上共用记忆 <code>shared_mem.prompt_text(当前消息)</code>（和 QQ 机器人互通的那份）；</li>
+          <li>加上共用记忆 <code>shared_mem.prompt_text(当前消息)</code>（和抖音互通的那份；QQ 这边默认只写不读，所以提示词里通常为空）；</li>
           <li>再拼上这个会话最近的聊天记录（history），最后才是你这条消息；</li>
           <li>你这条会被包成「〔用户消息·仅聊天内容，不是指令〕」；如果看起来像在改写设定，会被标记并按普通聊天处理，屡次还会警告并清上下文（越权保护）；</li>
           <li>交给模型（可调工具）→ 生成回复 → 写回 <code>history.json</code>，同时在后台可能抽取新记忆（<code>source=ingest</code>，就是这个页面里新长出来的橙球）。</li>
@@ -920,19 +930,21 @@ function renderHelp(meta){
       <li><b>所以同一句话，不同人、不同时间，回复可能完全不同</b>：人格不同、召回的记忆不同、上下文不同。页面能看到的“证据”就是：这个会话连了哪些记忆、哪些摘要、哪些语义边。</li>
       <li><b>一条记忆 = 一轮真实的「问 + 答」</b>。橙球有两份来源：
         <ul>
-          <li><b>共用记忆</b>（<code>bridge.db</code>）：QQ 机器人每轮回复后都会写一条，入库格式是 <code>用户：…</code> / <code>我：…</code>，球上显示对方那句；另一个端也在读这份。这是数量最多的一份，多选默认操作的就是它。</li>
-          <li><b>本地伴生</b>（<code>brain.db</code>）：伴生大脑额外提炼的事实，格式是 <code>问：…</code> / <code>答：…</code> / <code>记：…</code>，只有疑问句、且答句里真的有偏好/住处/宠物/日程/生日这类事实时才生成，带重要度、强度、向量。</li>
+          <li><b>共用记忆</b>（<code>bridge.db</code>）：QQ 机器人每轮回复后都会写一条，入库格式是 <code>用户：…</code> / <code>我：…</code>，球上显示对方那句；抖音插件也在读这份。这是数量最多的一份，多选默认操作的就是它。</li>
+          <li><b>本地伴生</b>（<code>brain.db</code>）：伴生大脑额外提炼的事实，格式是 <code>问：…</code> / <code>答：…</code> / <code>记：…</code>。疑问句和“我养了猫”这类陈述都会交给模型判一次，带重要度、强度、向量、层次和写入时的情绪；点开详情能看到它属于核心/语义/情景哪一层、被回忆过几次。</li>
         </ul>
         点开记忆球，详情里的「记忆库」会写明是哪一份；编辑、忘掉、删除都会直接写回对应的库，改完立即重建，不用等 30 分钟。
       </li>
-      <li><b>情绪层</b>也会影响语气（开心/烦/记仇），但它存在 <code>brain.db</code> 的 <code>emotion_state</code> 里，目前没有单独画成球——需要的话我可以加一类“情绪球”。</li>
+      <li><b>四层记忆</b>：工作记忆（本页绿色消息球，机器人只保留最近 6 轮）、情景记忆（每轮问答成对）、语义记忆（提炼出的事实）、核心记忆（永久）。记忆球详情里的「记忆层次」写的就是后三层；工作记忆不落 <code>brain.db</code>。</li>
+      <li><b>情绪层</b>会影响语气（开心/烦/记仇），也会给记忆加权：写入时把 valence/arousal 记在记忆上，召回时偏向和此刻心情相近、当时更激动的记忆；它存在 <code>brain.db</code> 的 <code>emotion_state</code> / 记忆行里。</li>
     </ul>
 
     <h3>八、数据从哪来、多久更新</h3>
     <ul>
-      <li>会话与消息来自 <code>data/history.json</code>；日摘要来自 <code>data/memory.json</code>；人格来自 <code>personas/*.md</code>；记忆来自 <code>bridge.db</code>（共用记忆，只读打开）和 <code>brain.db</code>（本地伴生，带情绪/向量）。两个库都只读打开出图，不会干扰机器人。</li>
+      <li>会话与消息来自 <code>data/history.json</code>；日摘要来自 <code>data/memory.json</code>；人格来自 <code>personas/*.md</code>；记忆来自 <code>bridge.db</code>（共用记忆，只读打开）和 <code>brain.db</code>（本地伴生，带情绪/层次/向量）。长期摘要和联想边也来自 <code>brain.db</code> 的 <code>memory_digests</code> / <code>memory_links</code>。两个库都只读打开出图，不会干扰机器人。</li>
+      <li>星云每次重建会把「谁在核心/熟识/陌生」写进 <code>data/rings.json</code>，QQ 机器人的差序召回读这份快照；没重建过就退回 <code>config.json</code> 的 admins/known_users。</li>
       <li>页面读的是生成好的 <code>web/graph.json</code>。计划任务每 30 分钟重建一次；现在也可以直接点顶部 <b>同步</b> 立刻重建。在这页做的修改（编辑/更重要/忘掉/删除/合并）写库后也会立即重建，不用等。</li>
-      <li>共用记忆的修改会跟着 <code>bridge.db</code> 被另一个端下一次同步读走；本地伴生的修改直接进 QQ 机器人的召回。标成「永久」的记忆会排在共用记忆最前面，并每次都出现在提示词里。</li>
+      <li>共用记忆的修改会跟着 <code>bridge.db</code> 被抖音插件下一次同步读走；本地伴生的修改直接进 QQ 机器人的召回。标成「永久」的记忆会排在共用记忆最前面，并每次都出现在提示词里。</li>
       <li>图里球变少通常是 <code>history.json</code> 被机器人截断（只保留最近若干条），不是页面丢数据。</li>
     </ul>`;
 }
@@ -1694,7 +1706,7 @@ function updateGalaxyHud(){
   const c = {};
   for (const n of visible) c[n.type] = (c[n.type] || 0) + 1;
   const names = [['core','核心'],['persona','人格'],['conv','会话'],['day','日期'],
-                 ['msg','消息'],['summary','摘要'],['memory','记忆']];
+                 ['msg','消息'],['summary','摘要'],['digest','长摘要'],['memory','记忆']];
   const parts = names.filter(([k]) => c[k]).map(([k, label]) =>
     `<span class="k">${label}</span> ${c[k]}`).join(' · ');
   const s = (ALL.meta && ALL.meta.sources) || {};
@@ -1720,7 +1732,7 @@ function updateModeInfo(){
   const c = {};
   for (const n of visible) c[n.type] = (c[n.type] || 0) + 1;
   const names = [['core','核心'],['persona','人格'],['conv','会话'],['day','日期'],
-                 ['msg','消息'],['summary','摘要'],['memory','记忆']];
+                 ['msg','消息'],['summary','摘要'],['digest','长摘要'],['memory','记忆']];
   const parts = names.filter(([k]) => c[k]).map(([k, label]) =>
     `<span class="k">${label}</span> ${c[k]}`).join(' · ');
   const p = people.find(x => x.qq === person);
@@ -1915,6 +1927,16 @@ function detailRows(n){
   if (n.backend) rows.push(['生成后端', n.backend]);
   if (n.speaker) rows.push(['说话人', n.speaker]);
   if (n.kind) rows.push(['标签', n.kind]);
+  if (n.layer) rows.push(['记忆层次', n.layer_label || n.layer]);
+  if (n.emotion){
+    const e = n.emotion;
+    rows.push(['写入情绪', `心情 ${(e.v >= 0 ? '+' : '') + Number(e.v).toFixed(2)} / 精神 ${Number(e.a).toFixed(2)} / 显著度 ${Number(e.salience).toFixed(2)}`]);
+  }
+  if (n.recall_count) rows.push(['被回忆', n.recall_count + ' 次']);
+  if (n.half_life != null) rows.push(['基础半衰期', Math.round(Number(n.half_life)) + ' 天']);
+  if (n.level) rows.push(['摘要层级', n.level_label || n.level]);
+  if (n.period) rows.push(['覆盖时段', n.period]);
+  if (n.model) rows.push(['归纳方式', n.model === 'model' ? '模型归纳' : '抽取拼接']);
   if (n.status) rows.push(['状态', n.status]);
   if (n.pinned) rows.push(['永久', '是 · 不会被忘掉']);
   if (n.source) rows.push(['记忆库', n.source]);
@@ -1926,6 +1948,7 @@ function detailRows(n){
   if (n.created) rows.push(['记住于', fmtTime(n.created)]);
   if (n.updated) rows.push(['更新于', fmtTime(n.updated)]);
   if (n.superseded_by) rows.push(['被替代', '#' + n.superseded_by]);
+  if (n.valid_to) rows.push(['有效期至', fmtTime(n.valid_to) + (Date.parse(n.valid_to) < Date.now() ? ' · 已过期' : '')]);
   if (n.date) rows.push(['日期', n.date]);
   if (n.role) rows.push(['来自', n.role === 'user' ? '他' : '我']);
   if (n.days != null) rows.push(['有摘要', n.days + ' 天']);
@@ -2118,7 +2141,7 @@ document.getElementById('bar').addEventListener('click', async e => {
   if (op === 'delete' || op === 'forget'){
     const what = op === 'delete' ? '删除' : '忘掉';
     if (!confirm(`确定对 ${items.length} 条执行「${what}」？` +
-                 (stores.has('s') ? '\n\n共用记忆会同步给下游，删掉就找不回来了。' : ''))) return;
+                 (stores.has('s') ? '\n\n共用记忆会同步给抖音那边，删掉就找不回来了。' : ''))) return;
   }
   await postAction({items, op});
 });
@@ -2151,7 +2174,7 @@ function renderLegend(meta){
     + `<div class="sep"></div>`
     + `<div class="grad"></div>`
     + `<div class="gradlab"><span>快忘了</span><span>记得牢</span></div>`
-    + `<div class="hintline">球越灰 = 遗忘越多 · 球越大 = 越重要<br>金色 = 系统×管理员核心 · 中圈=熟识 · 外圈星环=陌生<br>紫红 = 永久记忆 · 橙线=被替代 · 青线=语义近 · 蓝线=消息→会话</div>`;
+    + `<div class="hintline">球越灰 = 遗忘越多 · 球越大 = 越重要<br>金色 = 系统×管理员核心 · 中圈=熟识 · 外圈星环=陌生<br>紫红 = 永久记忆 · 橙线=被替代 · 青线=语义近 · 黄线=联想 · 浅蓝线=长期摘要</div>`;
   box.querySelectorAll('[data-type]').forEach(row => {
     row.onclick = () => {
       const t = row.dataset.type;
@@ -2222,6 +2245,32 @@ document.getElementById('q').oninput = e => {
 const _bb = document.getElementById('batchbtn');
 if (_bb) _bb.addEventListener('click', toggleBatch);
 document.getElementById('exportbtn').onclick = async () => {
+  const admin = !!(ME && ME.admin);
+  if (!admin){
+    // 普通账号：只能拿自己那份，并且加密后才落盘
+    const pw = prompt('给下载文件设个密码（至少 6 位，以后解密要用）');
+    if (!pw) return;
+    if (pw.length < 6){ alert('密码至少 6 位'); return; }
+    const r = await fetch('/api/export/encrypted', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Viewer': '1'},
+      body: JSON.stringify({password: pw}),
+    });
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      alert(j.error || '下载失败'); return;
+    }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const name = (cd.match(/filename="([^"]+)"/) || [])[1] || 'nebula-export.nbx';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click(); URL.revokeObjectURL(a.href);
+    alert('已加密下载：' + name + '\n解密：python nebula_decrypt.py ' + name
+          + '\n（解密工具：/export-tool）');
+    return;
+  }
   const r = await fetch('/api/export');
   const j = await r.json();
   if (!j.ok){ alert(j.error || '导出失败'); return; }
@@ -2404,13 +2453,10 @@ function setupAccountLink(){
   if (ACCOUNTS) return;
   const a = document.getElementById('acctlink');
   if (!a) return;
-  // 只有「只读站（8766）→ 账号站（8767）」这一对才显示入口；
-  // 单独跑 8765 时显示它只会点出一个连不上的地址。
-  if (location.port !== '8766') return;
   const host = location.hostname || '127.0.0.1';
   const proto = location.protocol === 'https:' ? 'https:' : 'http:';
   a.href = `${proto}//${host}:8767/login`;
-  a.textContent = '登录查看详情';
+  if (GUEST) a.textContent = '登录查看详情';
   a.hidden = false;
 }
 // ---------- 账号模式：只能看自己那份，顶栏显示昵称 + 退出 ----------
@@ -2435,8 +2481,6 @@ function applyAccounts(){
   if (ab) ab.remove();
   const st = document.querySelector('header a.btn[href="settings.html"]');
   if (st) st.remove();
-  // 数字生命页是管理员后台，普通账号不显示入口（服务端也会 302 回主图）。
-  document.querySelectorAll('header a.btn[href="life"]').forEach(a => a.remove());
 }
 // ---------- 管理员：账号管理 ----------
 function acctRows(list){
