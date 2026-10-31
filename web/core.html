@@ -171,6 +171,49 @@
     color:var(--text); padding:10px 12px; width:100%; margin-bottom:14px}
   .dlg-actions{display:flex; gap:10px; justify-content:flex-end}
 
+  /* 情绪层 */
+  .bars{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .bar{display:flex;align-items:center;gap:10px;font-size:12px}
+  .bar .bl{width:36px;color:var(--muted);flex:none}
+  .bar .bt{position:relative;flex:1;height:8px;border-radius:99px;background:rgba(255,255,255,.07)}
+  .bar .bt i{display:block;height:100%;border-radius:99px;background:var(--c,linear-gradient(90deg,var(--accent),var(--cyan)));transition:width .4s ease}
+  .bar .bt em{position:absolute;top:-3px;width:2px;height:14px;border-radius:2px;background:rgba(255,255,255,.45)}
+  .bar .bv{width:34px;text-align:right;font-variant-numeric:tabular-nums;color:#cdd2e6}
+  .kpis{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;color:var(--muted);font-size:12px}
+  .kpis b{display:block;color:var(--text);font-size:18px;font-variant-numeric:tabular-nums;margin-top:2px}
+  .fuse{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--warn);border:1px solid rgba(255,180,84,.35);border-radius:999px;padding:2px 8px}
+  .fuse.off{color:var(--muted);border-color:var(--line)}
+  .why{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .why li{font-size:12px;color:var(--muted)}
+  .why b{color:#cdd2e6;font-weight:500}
+  .spark{margin-top:12px;color:var(--muted);font-size:12px}
+  .spark svg{display:block;width:100%;height:62px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#cdd2e6;border:1px solid var(--line);background:rgba(255,255,255,.03);border-radius:999px;padding:4px 10px;margin:0 6px 6px 0}
+  .chip b{font-variant-numeric:tabular-nums;color:#fff}
+  .verdict{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+  .verdict strong{font-size:26px}
+  .verdict span{color:var(--muted);font-size:12px}
+  .relrow{display:flex;align-items:center;gap:10px;margin-top:6px}
+  .relrow .rid{font-size:11px;color:var(--muted);width:48px;flex:none}
+  .relbar{position:relative;flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .relbar i{display:block;height:100%;background:linear-gradient(90deg,var(--pink),var(--accent))}
+  .relbar.need i{background:linear-gradient(90deg,var(--warn),var(--pink))}
+
+  .heat{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:4px}
+  .heat i{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border-radius:8px;
+    font-size:10px;font-style:normal;color:rgba(255,255,255,.88);background:rgba(255,255,255,.06)}
+  .heat i.void{background:rgba(255,255,255,.025);border:1px dashed rgba(255,255,255,.10);color:rgba(255,255,255,.28)}
+  .heathead{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:10px;
+    color:var(--muted);text-align:center;margin-top:6px}
+  .heatlegend{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:8px}
+  .heatlegend .ramp{display:inline-block;width:96px;height:8px;border-radius:99px;
+    background:linear-gradient(90deg,hsl(6 68% 42%),hsl(65 68% 42%),hsl(124 68% 42%))}
+  .psn{padding:10px 0;border-top:1px solid rgba(255,255,255,.06)}
+  .psn:first-child{border-top:0;padding-top:2px}
+  .psn .nm{font-size:13px;margin-bottom:6px}
+  .psn svg{width:100%;height:56px;display:block}
+  .psn .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:4px}
+
   @media (max-width:900px){
     .card{grid-column:span 12}
     .hero{flex-direction:column; align-items:flex-start}
@@ -190,7 +233,8 @@
   <div class="top-right">
     <a class="btn" href="/" title="回到记忆星云" id="backNebula">星云</a>
     <span class="pill" id="conn">连接中…</span>
-    <button class="btn" id="adminBtn">管理员解锁</button>
+    <span class="pill" id="whoami" hidden>—</span>
+    <a class="btn" href="/logout" id="logoutBtn" hidden>退出</a>
   </div>
 </header>
 
@@ -223,8 +267,8 @@
           <span class="name">CORTISOL</span>
         </div>
         <div class="hormone-meta">
-          基线 <b id="hBase">50</b><br>
-          即时温度 <b id="hTemp">0.70</b><br>
+          血清素 <b id="serVal">—</b> <small>基线 <b id="serBase">—</b></small><br>
+          <span style="font-size:11px">多巴胺/皮质醇基线 <b id="hBase">50</b></span>
           <label class="switch admin-only" style="margin-top:8px">
             <input type="checkbox" id="hormoneSwitch"><span class="track"></span>启用内分泌
           </label>
@@ -235,6 +279,99 @@
         <button class="btn xs" data-op="hormone_set" data-key="dopamine" data-val="70">多巴胺 70</button>
         <button class="btn xs" data-op="hormone_set" data-key="cortisol" data-val="65">皮质醇 65</button>
       </div>
+    </article>
+
+    <!-- 情绪 -->
+    <article class="card" id="card-affect">
+      <div class="chead">
+        <div class="left"><span class="ico">💗</span><h2>情绪</h2></div>
+        <span class="badge" id="affectBadge">—</span>
+      </div>
+      <div class="bars" id="affectBars"></div>
+      <div class="kpis">
+        <div>主导<b id="affDom">—</b></div>
+        <div>正面<b id="affPos">—</b></div>
+        <div>负面<b id="affNeg">—</b></div>
+        <div>表达欲<b id="affExp">—</b></div>
+      </div>
+      <div style="margin-top:10px"><span class="fuse off" id="fuseC">好奇心熔断 —</span> <span class="fuse off" id="fuseH">激素熔断 —</span></div>
+      <ul class="why" id="whyList"></ul>
+      <div class="spark" id="affSpark"></div>
+      <div class="admin-block" style="gap:8px;margin-top:12px">
+        <button class="btn xs" data-op="affect_tick">立刻一拍</button>
+        <button class="btn xs danger" id="affectReset">重置</button>
+      </div>
+      <div class="admin-block" style="gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:12px;color:var(--muted)"><input type="checkbox" id="affEnable"> 情绪层</label>
+        <select id="affMode" style="font-size:12px;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 6px">
+          <option value="auto">判定：自动</option>
+          <option value="keywords">判定：关键词</option>
+          <option value="model">判定：总问模型</option>
+        </select>
+      </div>
+      <div class="admin-block" style="gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12px;color:var(--muted)">手动注入：</span>
+        <button class="btn xs" data-aff="praise">被夸</button>
+        <button class="btn xs" data-aff="insult">被骂</button>
+        <button class="btn xs" data-aff="cold">被冷落</button>
+      </div>
+    </article>
+
+    <!-- 内稳态 -->
+    <article class="card" id="card-needs">
+      <div class="chead">
+        <div class="left"><span class="ico">🫁</span><h2>内稳态</h2></div>
+        <span class="badge">按分钟</span>
+      </div>
+      <div class="bars" id="needBars"></div>
+      <div class="kpis">
+        <div>疲劳<b id="dFatigue">—</b></div>
+        <div>孤独<b id="dLonely">—</b></div>
+        <div>无聊<b id="dBored">—</b></div>
+      </div>
+      <div class="spark" id="needNote"></div>
+    </article>
+
+    <!-- 关系与索取度 -->
+    <article class="card" id="card-rel">
+      <div class="chead">
+        <div class="left"><span class="ico">🪢</span><h2>关系与索取度</h2></div>
+        <span class="badge" id="relBadge">—</span>
+      </div>
+      <ul class="list" id="relList"></ul>
+      <div class="spark" id="lastWrite"></div>
+    </article>
+
+    <!-- 情绪日历 -->
+    <article class="card" id="card-cal">
+      <div class="chead">
+        <div class="left"><span class="ico">🌡️</span><h2>情绪日历</h2></div>
+        <span class="badge" id="calBadge">—</span>
+      </div>
+      <div class="heathead" id="heatHead"></div>
+      <div class="heat" id="heatGrid"></div>
+      <div class="heatlegend"><span>冷</span><span class="ramp"></span><span>暖</span>
+        <span style="margin-left:auto" id="calNote">过去 30 天</span></div>
+    </article>
+
+    <!-- 关系走势 -->
+    <article class="card" id="card-person">
+      <div class="chead">
+        <div class="left"><span class="ico">📈</span><h2>关系走势</h2></div>
+        <span class="badge" id="personBadge">—</span>
+      </div>
+      <div id="personBody"></div>
+    </article>
+
+    <!-- 行为建议 -->
+    <article class="card" id="card-decision">
+      <div class="chead">
+        <div class="left"><span class="ico">🎛️</span><h2>行为建议</h2></div>
+        <span class="badge">只算不执行</span>
+      </div>
+      <div class="verdict"><strong id="decReply">—</strong><span id="decP">—</span></div>
+      <div id="decChips"></div>
+      <div class="spark" id="decFactors"></div>
     </article>
 
     <!-- 执念 -->
@@ -342,31 +479,12 @@
   </footer>
 </main>
 
-<dialog id="adminDlg">
-  <article>
-    <h3>管理员解锁</h3>
-    <p>输入 <code>config.json → core.web_token</code> 里的令牌。只存在本机浏览器里。</p>
-    <input id="tokenInput" type="password" placeholder="web_token" autocomplete="off">
-    <div class="dlg-actions">
-      <button class="btn" id="cancelToken">取消</button>
-      <button class="btn primary" id="saveToken">解锁</button>
-    </div>
-  </article>
-</dialog>
-
 <div id="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let TOKEN = localStorage.getItem('coreToken') || '';
 let ADMIN = false;
-const hashTok = (location.hash.match(/token=([^&]+)/) || [])[1];
-if (hashTok) {
-  TOKEN = decodeURIComponent(hashTok);
-  localStorage.setItem('coreToken', TOKEN);
-  history.replaceState(null, '', location.pathname);
-}
 let S = null;
 
 function toast(msg, err){
@@ -382,9 +500,7 @@ async function load(){
     const r = await fetch('/api/life/state', {cache:'no-store'});
     if(!r.ok) throw new Error(r.status);
     S = await r.json();
-    const siteAdmin = S.me ? !!S.me.admin : null;
-    if (S.me && !siteAdmin && TOKEN) { TOKEN = ''; localStorage.removeItem('coreToken'); }
-    ADMIN = siteAdmin !== null ? siteAdmin : !!TOKEN;
+    ADMIN = !!(S.me && S.me.admin);
     render();
     $('#conn').textContent = '已连接';
     $('#conn').className = 'pill ok';
@@ -398,7 +514,6 @@ async function load(){
 
 async function act(op, extra={}){
   const headers = {'Content-Type':'application/json', 'X-Viewer':'1'};
-  if(TOKEN) headers['X-Core-Token'] = TOKEN;
   const r = await fetch('/api/life/action', {
     method:'POST',
     headers,
@@ -406,30 +521,227 @@ async function act(op, extra={}){
   });
   let j = {};
   try{ j = await r.json(); }catch(e){}
-  if(!r.ok || !j.ok){ toast(j.error === 'forbidden' ? '令牌不对或不是管理员' : (j.error || '操作失败'), true); return false; }
+  if(!r.ok || !j.ok){
+    const msg = r.status === 401 ? '登录已过期，请重新登录'
+              : r.status === 403 ? '只有管理员能改'
+              : (j.error || '操作失败');
+    toast(msg, true); return false;
+  }
   toast('已保存');
   await load();
   return true;
 }
 
+function sparkline(hist){
+  if(!hist.length) return '<div class="empty" style="padding:8px">还没有按天快照</div>';
+  const W = 300, H = 64, P = 5, n = hist.length;
+  const keys = ['joy','content','sad','shame','inferior'];
+  const col = {joy:'#ffd166',content:'#3ddc97',sad:'#6ea8ff',shame:'#ff5ca8',inferior:'#b08cff'};
+  const x = i => n === 1 ? W / 2 : P + (W - 2 * P) * i / (n - 1);
+  const y = v => H - P - (H - 2 * P) * Math.max(0, Math.min(1, v || 0));
+  const lines = keys.map(k => {
+    const d = hist.map((h, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(h[k]).toFixed(1)}`).join(' ');
+    return `<path d="${d}" fill="none" stroke="${col[k]}" stroke-width="1.6" opacity=".9"/>`;
+  }).join('');
+  const dots = hist.map((h, i) => keys.map(k =>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(h[k]).toFixed(1)}" r="1.3" fill="${col[k]}" opacity=".55"/>`).join('')).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${lines}${dots}</svg>`
+    + `<div style="display:flex;justify-content:space-between;font-size:11px">`
+    + `<span>${esc(hist[0].d)}</span><span>${esc(hist[hist.length - 1].d)}</span></div>`;
+}
+
 function render(){
   if(!S) return;
   const h = S.hormones || {};
-  const dop = Math.round(h.dopamine ?? 50), cor = Math.round(h.cortisol ?? 50);
+  const ah = (S.affect && S.affect.enabled !== false && S.affect.hormones) ? S.affect.hormones : null;
+  const ahb = (S.affect && S.affect.hormone_base) || {};
+  const pct = x => Math.round((x || 0) * 100);
+  const dop = ah ? pct(ah.da) : Math.round(h.dopamine ?? 50);
+  const cor = ah ? pct(ah.cor) : Math.round(h.cortisol ?? 50);
   $('#dopVal').textContent = dop;
   $('#corVal').textContent = cor;
   $('#ringDop').style.setProperty('--v', dop);
   $('#ringCor').style.setProperty('--v', cor);
-  $('#hBase').textContent = Math.round(h.baseline ?? 50);
-  $('#hTemp').textContent = (0.7 + (S.temperature_delta || 0)).toFixed(2);
+  $('#hBase').textContent = ah ? pct(ahb.da) + ' / ' + pct(ahb.cor) : Math.round(h.baseline ?? 50);
+  $('#serVal').textContent = ah ? pct(ah.ser) : '—';
+  $('#serBase').textContent = ah ? pct(ahb.ser) : '—';
   $('#tempDelta').textContent = (S.temperature_delta >= 0 ? '+' : '') + Number(S.temperature_delta || 0).toFixed(2);
   $('#tempHint').textContent = h.enabled ? '内分泌开着' : '未开启内分泌（不偏移）';
   $('#hormoneBadge').textContent = h.enabled ? '运行中' : '关闭';
   $('#hormoneBadge').className = 'badge ' + (h.enabled ? 'live' : 'off');
   const sw = $('#hormoneSwitch');
   sw.checked = !!h.enabled;
-  // 站点登录时没有 X-Core-Token，权限由账号角色决定，不能再拿 TOKEN 判断。
+  // 权限由账号角色决定：管理员的会话可写，其余账号只读。
   sw.disabled = !ADMIN;
+
+  // ---------------- 情绪层 ----------------
+  const af = S.affect || {};
+  const hasA = af.enabled !== false;
+  const affBadge = $('#affectBadge');
+  affBadge.textContent = hasA ? '运行中' : '未启用';
+  affBadge.className = 'badge ' + (hasA ? 'live' : 'off');
+  if (hasA) {
+    const order = ['joy','content','sad','shame','inferior'];
+    const col = {joy:'#ffd166',content:'#3ddc97',sad:'#6ea8ff',shame:'#ff5ca8',inferior:'#b08cff'};
+    const dims = af.dims || {}, labels = af.labels || {}, base = af.baselines || {};
+    $('#affectBars').innerHTML = order.map(k => {
+      const v = Math.round((dims[k] || 0) * 100);
+      const b = Math.round((base[k] || 0) * 100);
+      return `<div class="bar"><span class="bl">${esc(labels[k] || k)}</span>`
+        + `<div class="bt"><i style="--c:${col[k]};width:${v}%"></i><em style="left:${b}%"></em></div>`
+        + `<span class="bv">${v}</span></div>`;
+    }).join('');
+    $('#affDom').textContent = af.dominant || '—';
+    $('#affPos').textContent = Math.round((af.positive || 0) * 100);
+    $('#affNeg').textContent = Math.round((af.negative || 0) * 100);
+    $('#affExp').textContent = Math.round((af.expressiveness || 0) * 100);
+    const fuse = af.fuse || {};
+    $('#fuseC').textContent = '好奇心熔断 ' + (fuse.curiosity ? '是' : '否');
+    $('#fuseC').className = 'fuse' + (fuse.curiosity ? '' : ' off');
+    $('#fuseH').textContent = '激素熔断 ' + (fuse.hormone ? '是' : '否');
+    $('#fuseH').className = 'fuse' + (fuse.hormone ? '' : ' off');
+    const flat = [];
+    Object.entries(af.why || {}).forEach(([k, arr]) => {
+      (Array.isArray(arr) ? arr : [arr]).forEach(e => {
+        if (e && typeof e === 'object') flat.push(Object.assign({k}, e));
+      });
+    });
+    flat.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const why = flat.slice(-4).reverse();
+    const LMAP = Object.assign({}, labels, {da:'多巴胺',cor:'皮质醇',ser:'血清素',
+      energy:'能量',social:'社交',novelty:'新鲜',ext:'外向',neu:'神经质',agree:'宜人',
+      offline:'离线'});
+    $('#whyList').innerHTML = why.length ? why.map(e => {
+      const t = e.ts ? new Date(e.ts * 1000).toTimeString().slice(0, 5) : '';
+      const d = Number(e.delta || 0);
+      return `<li>${t ? `<span style="opacity:.6">${t}</span> ` : ''}`
+        + `<b>${esc(LMAP[e.k] || e.k)}</b> ${d > 0 ? '+' : ''}${d} · ${esc(e.cause || '')}</li>`;
+    }).join('') : '<li>最近没有明显变化</li>';
+    $('#affSpark').innerHTML = sparkline(af.history || []);
+
+    const nd = af.needs || {}, sp = af.setpoints || {}, dv = af.derived || {};
+    const ncol = {energy:'#ffb454', social:'#3fd0ff', novelty:'#3ddc97'};
+    const nlab = {energy:'能量', social:'社交', novelty:'新鲜'};
+    $('#needBars').innerHTML = ['energy','social','novelty'].map(k => {
+      const v = Math.round((nd[k] || 0) * 100), s = Math.round((sp[k] || 0) * 100);
+      return `<div class="bar"><span class="bl">${nlab[k]}</span>`
+        + `<div class="bt"><i style="--c:${ncol[k]};width:${v}%"></i><em style="left:${s}%"></em></div>`
+        + `<span class="bv">${v}</span></div>`;
+    }).join('');
+    $('#dFatigue').textContent = Math.round((dv.fatigue || 0) * 100);
+    $('#dLonely').textContent = Math.round((dv.loneliness || 0) * 100);
+    $('#dBored').textContent = Math.round((dv.boredom || 0) * 100);
+    const hh = af.hormones || {}, hb = af.hormone_base || {};
+    const pc = x => Math.round((x || 0) * 100);
+    $('#needNote').textContent = `激素：多巴胺 ${pc(hh.da)}（基线 ${pc(hb.da)}） · 皮质醇 ${pc(hh.cor)}（${pc(hb.cor)}） · 血清素 ${pc(hh.ser)}（${pc(hb.ser)}）`
+      + (Number(af.offline_hours || 0) >= 1 ? ` · 上次离线 ${af.offline_hours} 小时已补算` : '');
+
+    const rel = af.relations || [];
+    $('#relBadge').textContent = rel.length + ' 人';
+    const ev = (af.events || [])[af.events.length - 1];
+    $('#lastWrite').textContent = ev
+      ? `最近写入：${ev.ts} · ${ev.contact} · ${ev.scope}`
+      : '还没有写入。发一条私聊或 @ 一次，这里会出现记录。';
+    $('#relList').innerHTML = rel.length ? rel.map(r => `
+      <li class="item">
+        <div class="grow">
+          <div class="txt">${esc(r.id)}</div>
+          <div class="relrow"><span class="rid">信任</span><div class="relbar"><i style="width:${Math.round((r.trust || 0) * 100)}%"></i></div></div>
+          <div class="relrow"><span class="rid">索取度</span><div class="relbar need"><i style="width:${Math.round((r.need || 0) * 100)}%"></i></div></div>
+          <div class="meta">熟悉 ${Math.round((r.familiarity || 0) * 100)} · 依恋 ${Math.round((r.attachment || 0) * 100)} · 边界 ${Math.round((r.boundary || 0) * 100)} · ${r.msgs} 条 · ${esc(r.last || '')}</div>
+        </div>
+        <button class="btn xs danger admin-only" data-rel-del="${esc(r.id)}">清</button>
+      </li>`).join('') : '<div class="empty">还没有关系记录</div>';
+
+    // 情绪日历：固定 30 天窗口，有记录的填色，没记录的留空格（不补假数据）
+    const dh = af.history || [];
+    const byDay = {};
+    dh.forEach(h => { if (h && h.d) byDay[h.d] = h; });
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const cells = [];
+    const first = new Date(midnight); first.setDate(midnight.getDate() - 29);
+    const lead = (first.getDay() + 6) % 7;          // 周一算第一列
+    for (let i = 0; i < lead; i++) cells.push(null);
+    let filled = 0;
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(midnight); d.setDate(midnight.getDate() - i);
+      const key = String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const h = byDay[key];
+      if (h) filled++;
+      cells.push({ key, day: d.getDate(), h });
+    }
+    $('#heatHead').innerHTML = ['一', '二', '三', '四', '五', '六', '日']
+      .map(w => `<span>${w}</span>`).join('');
+    $('#heatGrid').innerHTML = cells.map(c => {
+      if (!c) return '<i class="void" style="border:0;background:transparent"></i>';
+      if (!c.h) return `<i class="void" title="${esc(c.key)} · 无记录">${c.day}</i>`;
+      const v = (Number(c.h.joy || 0) + Number(c.h.content || 0)) / 2 - Number(c.h.sad || 0);
+      const t = Math.max(0, Math.min(1, (v + 0.35) / 0.95));
+      const hue = Math.round(6 + 118 * t);
+      const tip = `${c.key} 愉悦${Math.round((c.h.joy || 0) * 100)} 幸福${Math.round((c.h.content || 0) * 100)} 难过${Math.round((c.h.sad || 0) * 100)} 害羞${Math.round((c.h.shame || 0) * 100)} 自卑${Math.round((c.h.inferior || 0) * 100)}`;
+      return `<i title="${esc(tip)}" style="background:hsl(${hue} 68% 42% / .9)">${c.day}</i>`;
+    }).join('');
+    $('#calBadge').textContent = filled + ' / 30 天';
+    $('#calNote').textContent = filled
+      ? `过去 30 天有 ${filled} 天记录，空的是那天没跑或没数据`
+      : '还没有日快照，明天零点开始自动记';
+
+    // 关系走势：每人一张小图，数据攒够两天自动出线
+    $('#personBadge').textContent = rel.length + ' 人';
+    $('#personBody').innerHTML = rel.length ? rel.map(r => {
+      const hd = r.hist || {};
+      const hd2 = Object.assign({}, hd);
+      let days = Object.keys(hd2).sort();
+      if (!days.length) {
+        // 还没有历史点：先把今天的当前值当成第一笔画出来
+        const td = new Date();
+        const k = String(td.getMonth() + 1).padStart(2, '0') + '-' + String(td.getDate()).padStart(2, '0');
+        hd2[k] = { t: r.trust, n: r.need, b: r.boundary };
+        days = [k];
+      }
+      let chart = '<div class="spark">今天刚记下第一笔，明天开始有曲线。</div>';
+      if (days.length >= 2) {
+        const W = 300, H = 56, P = 6;
+        const line = k => days.map((d, i) => {
+          const x = P + i * (W - 2 * P) / (days.length - 1);
+          const y = P + (1 - Math.max(0, Math.min(1, hd2[d] && hd2[d][k] || 0))) * (H - 2 * P);
+          return x.toFixed(1) + ',' + y.toFixed(1);
+        }).join(' ');
+        chart = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+          <polyline fill="none" stroke="var(--ok)" stroke-width="2" points="${line('t')}"/>
+          <polyline fill="none" stroke="var(--warn)" stroke-width="2" points="${line('n')}"/>
+          <polyline fill="none" stroke="var(--pink)" stroke-width="1.5" stroke-dasharray="4 3" points="${line('b')}"/>
+        </svg>`;
+      }
+      return `<div class="psn">
+        <div class="nm">${esc(r.id)} <span class="meta">聊过 ${r.msgs} 条 · 最近 ${esc(r.last || '')}</span></div>
+        ${chart}
+        <div class="legend"><span>信任 ${Math.round((r.trust || 0) * 100)}</span><span>索取度 ${Math.round((r.need || 0) * 100)}</span><span>边界 ${Math.round((r.boundary || 0) * 100)}</span><span>${days.length} 天数据</span></div>
+      </div>`;
+    }).join('') : '<div class="empty">还没有关系记录</div>';
+
+    const dec = af.decision || {};
+    // 开关回填
+    const cf = af.conf || {};
+    const ae = $('#affEnable'), am = $('#affMode');
+    if (ae && document.activeElement !== ae) ae.checked = !!cf.enable;
+    if (am && document.activeElement !== am) am.value = cf.appraisal || 'auto';
+    $('#decReply').textContent = dec.reply ? '回' : '不回';
+    $('#decReply').style.color = dec.reply ? 'var(--ok)' : 'var(--warn)';
+    $('#decP').textContent = '建议概率 ' + Math.round((dec.p || 0) * 100) + '%';
+    $('#decChips').innerHTML = [
+      ['延迟', (dec.delay_ms || 0) + ' ms'],
+      ['上限', (dec.max_chars || 0) + ' 字'],
+      ['语气', dec.tone || '—'],
+      ['碎碎念', dec.mumble ? '开' : '关'],
+    ].map(([k, v]) => `<span class="chip">${k} <b>${esc(v)}</b></span>`).join('');
+    $('#decFactors').textContent = '因子：' + (dec.factors || []).map(f => `${f.k} ${f.v}${f.w}`).join(' · ');
+  } else {
+    $('#affectBars').innerHTML = '<div class="empty">情绪层未启用</div>';
+    $('#needBars').innerHTML = '';
+    $('#relList').innerHTML = '<div class="empty">未启用</div>';
+    $('#decChips').innerHTML = '';
+  }
 
   const obs = S.obsessions || [], scars = S.scars || [];
   $('#obsBadge').textContent = obs.length + ' 条';
@@ -510,29 +822,34 @@ function render(){
     : '<div class="empty">还没有审计</div>';
 
   document.body.classList.toggle('admin', ADMIN);
-  const ab = $('#adminBtn');
-  if (S.me) { ab.hidden = true; }          // 站点登录模式：权限跟账号走，不需要令牌
-  else { ab.hidden = false; ab.textContent = ADMIN ? '管理员' : '管理员解锁'; }
+  const who = $('#whoami');
+  if (who && S.me) {
+    who.hidden = false;
+    who.textContent = (S.me.label || S.me.qq) + (ADMIN ? ' · 管理员' : ' · 只读');
+    who.className = 'pill' + (ADMIN ? ' ok' : '');
+    $('#logoutBtn').hidden = false;
+  }
   $('#updated').textContent = '更新于 ' + new Date((S.ts || Date.now()/1000) * 1000).toLocaleTimeString();
 }
 
 function bind(){
   if(location.port === '6198') $('#backNebula').hidden = true;
-  $('#adminBtn').onclick = () => { $('#tokenInput').value = TOKEN; $('#adminDlg').showModal(); };
-  $('#cancelToken').onclick = () => $('#adminDlg').close();
-  $('#saveToken').onclick = async () => {
-    const t = $('#tokenInput').value.trim();
-    if(!t) return toast('令牌不能为空', true);
-    const old = TOKEN; TOKEN = t;
-    const r = await fetch('/api/life/action', {method:'POST', headers:{'Content-Type':'application/json','X-Viewer':'1','X-Core-Token':TOKEN}, body:JSON.stringify({op:'ping'})});
-    if(r.ok){ localStorage.setItem('coreToken', t); $('#adminDlg').close(); toast('已解锁'); await load(); }
-    else { TOKEN = old; toast('令牌不对', true); }
-  };
   $('#hormoneSwitch').onchange = e => act('hormone_enable', {value:e.target.checked});
+  const ae = $('#affEnable');
+  if(ae) ae.onchange = () => act('affect_conf', {key:'enable', value:ae.checked});
+  const am = $('#affMode');
+  if(am) am.onchange = () => act('affect_conf', {key:'appraisal', value:am.value});
+  document.querySelectorAll('[data-aff]').forEach(b => b.onclick = () => act('affect_event', {kind:b.dataset.aff}));
   document.querySelectorAll('[data-op]').forEach(b => b.onclick = () => {
     if(b.dataset.op === 'hormone_reset') return act('hormone_reset');
+    if(b.dataset.op === 'affect_tick') return act('affect_tick');
     act('hormone_set', {key:b.dataset.key, value:Number(b.dataset.val)});
   });
+  const ar = $('#affectReset');
+  if(ar) ar.onclick = () => {
+    if(!confirm('重置情绪层？会先把当前状态备份成 affect.json.bak-时间。')) return;
+    act('affect_reset');
+  };
   $('#obsAdd').onclick = () => {
     const t = $('#obsInput').value.trim();
     if(!t) return toast('先写点什么', true);
@@ -564,6 +881,8 @@ function bind(){
     if(on) act('organ_mark', {id:Number(on.dataset.oOn), status:'enabled'});
     if(off) act('organ_mark', {id:Number(off.dataset.oOff), status:'disabled'});
     if(odel) act('organ_del', {id:Number(odel.dataset.oDel)});
+    const rd = e.target.closest('[data-rel-del]');
+    if(rd) act('affect_rel_del', {contact: rd.dataset.relDel});
   });
 }
 
