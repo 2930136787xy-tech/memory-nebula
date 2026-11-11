@@ -85,8 +85,32 @@ DB = os.environ.get("VIEW_DB") or os.path.join(HERE, "brain.db")
 
 import accounts as accounts_store  # noqa: E402
 import memory_view as mv  # noqa: E402
-import memory_backup as backups  # noqa: E402
-import nebula_crypto as crypto  # noqa: E402
+try:  # 可选模块：仓库没带 memory_backup.py 时降级为「不做快照」，其余功能照常
+    import memory_backup as backups  # noqa: E402
+except Exception:  # pragma: no cover
+
+    class _NoBackup:
+        @staticmethod
+        def install(_conn) -> None:
+            return None
+
+        @staticmethod
+        def snapshot(_path, _label: str = "") -> None:
+            return None
+
+    backups = _NoBackup()
+
+try:  # 可选模块：仓库没带 nebula_crypto.py 时，只有「导出加密」不可用
+    import nebula_crypto as crypto  # noqa: E402
+except Exception:  # pragma: no cover
+
+    class _NoCrypto:
+        @staticmethod
+        def encrypt(*_a, **_k):
+            raise RuntimeError("缺少 nebula_crypto.py，导出加密不可用")
+
+    crypto = _NoCrypto()
+
 import settings_store  # noqa: E402
 
 STORE_LABEL = {"s": "共用记忆", "b": "本地伴生"}
