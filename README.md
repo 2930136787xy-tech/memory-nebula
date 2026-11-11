@@ -35,6 +35,37 @@ python viewer_server.py 8765
 它们都在 `.gitignore` 里。换成真实数据时，把这些删掉，按
 [数据与部署](docs/数据与部署.md) 放好自己的库即可。
 
+## 从零建自己的记忆库（不依赖 QQ，也不依赖任何聊天软件）
+
+上面那套是**演示数据**。如果你手上的记忆来自别处——微信、抖音、笔记软件、自己写的脚本——
+用 `tools/init_store.py` 建一个属于你自己的空库，再用 `tools/import_memories.py` 把记忆灌进去：
+
+```bash
+# 1. 建一个新库：框架代码 + 两个空库 + 两个人格（目录不存在会自动创建）
+python tools/init_store.py D:\my-memory --persona 10001=我自己 --persona 20002=朋友 --admin 10001
+
+cd D:\my-memory
+
+# 2. 把任何软件的导出记忆导进来（JSONL / JSON / CSV / 纯文本都行）
+python tools/import_memories.py . --file notes.jsonl --conversation app:notes --speaker 10001
+
+# 3. 起服务
+python viewer_server.py 8765
+```
+
+输入格式很宽松，JSONL 每行一个对象即可，字段都能缺：
+
+```json
+{"text": "用户喜欢在深夜写代码", "at": "2026-11-01T23:10:00", "importance": 0.8}
+{"text": "家里的猫叫胖虎", "at": "2026-11-02 09:00:00", "conversation": "app:生活", "speaker": "me"}
+```
+
+- `text` / `content` / `message` 任取其一当正文；`at` 支持 ISO 字符串或毫秒时间戳；
+- `importance` 缺省 0.6；同一条正文重复导入会自动跳过（`--allow-duplicates` 可关掉）；
+- 人格就是 `personas/<id>/meta.json`，`--persona id=昵称` 直接建，或事后手写一个也行。
+
+建出来的目录是**完整可运行的框架副本**，可以单独备份、单独部署，跟你机器上别的库互不影响。
+
 ## 三种模式
 
 | 模式 | 入口 | 能看到 | 能改 |
